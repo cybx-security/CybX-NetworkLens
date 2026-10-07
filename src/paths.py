@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import List, Optional
 
 
-APP_NAME = "CybX Network Scanner"
+APP_NAME = "CybX NetworkLens"
 
 
 def is_frozen() -> bool:
@@ -98,8 +98,8 @@ def machine_config_path() -> Path:
     """
     if sys.platform == "win32":
         base = os.environ.get("PROGRAMDATA") or r"C:\ProgramData"
-        return Path(base) / "CybX" / "Network Scanner" / "config.json"
-    return Path.home() / ".config" / "cybx-network-scanner" / "config.json"
+        return Path(base) / "CybX" / "NetworkLens" / "config.json"
+    return Path.home() / ".config" / "cybx-networklens" / "config.json"
 
 
 def config_candidates() -> List[Path]:

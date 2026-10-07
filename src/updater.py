@@ -88,7 +88,7 @@ def compare_versions(a: str, b: str) -> int:
 def _request(url: str, current_version: str) -> urllib.request.Request:
     return urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
-        "User-Agent": f"CybXNetworkScanner/{current_version}",
+        "User-Agent": f"CybXNetworkLens/{current_version}",
     })
 
 
@@ -151,7 +151,7 @@ def can_self_update() -> bool:
     if platform.system() != "Windows" or not is_frozen():
         return False
     here = app_dir()
-    return (here / "_internal").is_dir() and (here / "CybXNetworkScanner.exe").exists()
+    return (here / "_internal").is_dir() and (here / "CybXNetworkLens.exe").exists()
 
 
 def _expected_sum(release: Release, current_version: str) -> str:

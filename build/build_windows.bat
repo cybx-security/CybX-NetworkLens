@@ -1,9 +1,9 @@
 @echo off
 REM Build script for Windows
 REM Creates, in dist\:
-REM   - nmap-analyzer.exe / nmap-analyzer-gui.exe   portable single-file exes
-REM   - CybXNetworkScanner\                          the installed-app folder
-REM   - CybXNetworkScanner-Setup-x.y.z.exe          the installer (needs NSIS)
+REM   - networklens.exe / networklens-gui.exe   portable single-file exes
+REM   - CybXNetworkLens\                          the installed-app folder
+REM   - CybXNetworkLens-Setup-x.y.z.exe          the installer (needs NSIS)
 REM all with bundled nmap/Npcap.
 REM Safe to double-click: the window always stays open, and everything is
 REM also written to build\build_log.txt.
@@ -13,7 +13,7 @@ REM   NO_PAUSE=1    don't wait for a key press at the end
 REM   SKIP_NPCAP=1  don't download the Npcap installer (don't bundle it)
 
 setlocal enabledelayedexpansion
-title CybX Network Scanner - Windows Build
+title CybX NetworkLens - Windows Build
 
 set SCRIPT_DIR=%~dp0
 for %%I in ("%SCRIPT_DIR%..") do set PROJECT_DIR=%%~fI
@@ -22,16 +22,16 @@ set BINARIES_DIR=%PROJECT_DIR%\binaries\windows
 set INSTALLERS_DIR=%PROJECT_DIR%\installers\windows
 set LOG_FILE=%SCRIPT_DIR%build_log.txt
 set ICON_FILE=%PROJECT_DIR%\packaging\icon\icon.ico
-set APP_DIR=%BUILD_DIR%\CybXNetworkScanner
+set APP_DIR=%BUILD_DIR%\CybXNetworkLens
 set NPCAP_VERSION=1.79
 set NPCAP_URL=https://npcap.com/dist/npcap-%NPCAP_VERSION%.exe
 
 echo ========================================== > "%LOG_FILE%"
-echo   CybX Network Scanner - Windows Build >> "%LOG_FILE%"
+echo   CybX NetworkLens - Windows Build >> "%LOG_FILE%"
 echo ========================================== >> "%LOG_FILE%"
 
 echo ==========================================
-echo   CybX Network Scanner - Windows Build
+echo   CybX NetworkLens - Windows Build
 echo ==========================================
 echo.
 echo A full log is written to: %LOG_FILE%
@@ -230,9 +230,9 @@ REM Build 1: CLI binary (console, no UAC manifest)
 REM   - Run from an already-elevated cmd/PowerShell
 REM   - No UAC prompt on --help / --version / piped invocations
 REM ============================================================
-echo [*] Building CLI executable (nmap-analyzer.exe)... this takes a few minutes.
+echo [*] Building CLI executable (networklens.exe)... this takes a few minutes.
 python -m PyInstaller ^
-    --name nmap-analyzer ^
+    --name networklens ^
     --onefile ^
     --console ^
     --noconfirm ^
@@ -260,9 +260,9 @@ REM   - Double-click to launch
 REM   - Windows shows UAC prompt automatically on launch
 REM   - No console window appears behind the GUI
 REM ============================================================
-echo [*] Building GUI executable (nmap-analyzer-gui.exe)... this takes a few minutes.
+echo [*] Building GUI executable (networklens-gui.exe)... this takes a few minutes.
 python -m PyInstaller ^
-    --name nmap-analyzer-gui ^
+    --name networklens-gui ^
     --onefile ^
     --windowed ^
     --uac-admin ^
@@ -301,7 +301,7 @@ REM ============================================================
 echo.
 echo [*] Running build self-test (scans localhost, takes ~30s)...
 echo.
-"%BUILD_DIR%\nmap-analyzer.exe" --self-test
+"%BUILD_DIR%\networklens.exe" --self-test
 if errorlevel 1 (
     echo.
     echo [!] The build completed but the executable cannot scan.
@@ -311,7 +311,7 @@ if errorlevel 1 (
 )
 
 REM ============================================================
-REM Build 3: the installed-app folder (dist\CybXNetworkScanner)
+REM Build 3: the installed-app folder (dist\CybXNetworkLens)
 REM
 REM Same code as the two exes above, built as a folder instead of
 REM a single file: it starts instantly instead of unpacking nmap
@@ -319,14 +319,14 @@ REM to a temp directory on every launch. This folder is what the
 REM installer puts in Program Files. See packaging\installed_app.spec.
 REM ============================================================
 echo.
-echo [*] Building the installed-app folder (dist\CybXNetworkScanner)... a few more minutes.
+echo [*] Building the installed-app folder (dist\CybXNetworkLens)... a few more minutes.
 python -m PyInstaller --noconfirm --clean "%PROJECT_DIR%\packaging\installed_app.spec" >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo [!] Installed-app build failed. Details are in %LOG_FILE%
     goto :fail
 )
-if not exist "%APP_DIR%\CybXNetworkScanner.exe" (
-    echo [!] Installed-app build did not produce %APP_DIR%\CybXNetworkScanner.exe
+if not exist "%APP_DIR%\CybXNetworkLens.exe" (
+    echo [!] Installed-app build did not produce %APP_DIR%\CybXNetworkLens.exe
     echo     Details are in %LOG_FILE%
     goto :fail
 )
@@ -337,7 +337,7 @@ REM passing the single-file exe says nothing about what is in here.
 echo.
 echo [*] Self-testing the installed-app folder...
 echo.
-"%APP_DIR%\nmap-analyzer.exe" --self-test
+"%APP_DIR%\networklens.exe" --self-test
 if errorlevel 1 (
     echo.
     echo [!] The installed-app folder cannot scan, so no installer was built.
@@ -346,7 +346,7 @@ if errorlevel 1 (
 )
 
 REM ============================================================
-REM Build 4: the installer (dist\CybXNetworkScanner-Setup-x.y.z.exe)
+REM Build 4: the installer (dist\CybXNetworkLens-Setup-x.y.z.exe)
 REM
 REM Made with NSIS (free): https://nsis.sourceforge.io/Download
 REM or, from a terminal:  winget install NSIS.NSIS
@@ -367,10 +367,10 @@ if not defined MAKENSIS if exist "%ProgramFiles(x86)%\NSIS\makensis.exe" set MAK
 if not defined MAKENSIS if exist "%ProgramFiles%\NSIS\makensis.exe" set MAKENSIS=%ProgramFiles%\NSIS\makensis.exe
 if not defined MAKENSIS goto :no_nsis
 
-set SETUP_EXE=%BUILD_DIR%\CybXNetworkScanner-Setup-%APP_VERSION%.exe
+set SETUP_EXE=%BUILD_DIR%\CybXNetworkLens-Setup-%APP_VERSION%.exe
 if exist "%SETUP_EXE%" del "%SETUP_EXE%"
 echo.
-echo [*] Building the installer (CybXNetworkScanner-Setup-%APP_VERSION%.exe)...
+echo [*] Building the installer (CybXNetworkLens-Setup-%APP_VERSION%.exe)...
 "!MAKENSIS!" /V2 /DVERSION=%APP_VERSION% "/DSRC=%APP_DIR%" "/DICON=%ICON_FILE%" "/DCONFIG=%PROJECT_DIR%\config\config.json" "/DOUTFILE=%SETUP_EXE%" "%PROJECT_DIR%\packaging\windows\installer.nsi" >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo [!] Installer build failed. Details are in %LOG_FILE%
@@ -386,7 +386,7 @@ echo [+] Installer done.
 REM Checksums: the app's self-updater refuses a release without them, and
 REM verifies the installer it downloads against this file. Upload it to the
 REM GitHub release next to the installer (the release workflow does).
-python -c "import hashlib,sys,os; [print(hashlib.sha256(open(f,'rb').read()).hexdigest()+'  '+os.path.basename(f)) for f in sys.argv[1:] if os.path.isfile(f)]" "%SETUP_EXE%" "%BUILD_DIR%\nmap-analyzer.exe" "%BUILD_DIR%\nmap-analyzer-gui.exe" > "%BUILD_DIR%\SHA256SUMS"
+python -c "import hashlib,sys,os; [print(hashlib.sha256(open(f,'rb').read()).hexdigest()+'  '+os.path.basename(f)) for f in sys.argv[1:] if os.path.isfile(f)]" "%SETUP_EXE%" "%BUILD_DIR%\networklens.exe" "%BUILD_DIR%\networklens-gui.exe" > "%BUILD_DIR%\SHA256SUMS"
 if errorlevel 1 (
     echo [!] Could not write %BUILD_DIR%\SHA256SUMS
     goto :fail
@@ -405,12 +405,12 @@ echo   Double-click to install. Adds Desktop + Start Menu icons and an
 echo   uninstaller (Settings ^> Apps ^> Installed apps).
 echo.
 echo Portable, no install needed (run from a USB stick):
-echo   GUI: %BUILD_DIR%\nmap-analyzer-gui.exe  (auto-elevates via UAC)
-echo   CLI: %BUILD_DIR%\nmap-analyzer.exe      (run from an Administrator prompt)
+echo   GUI: %BUILD_DIR%\networklens-gui.exe  (auto-elevates via UAC)
+echo   CLI: %BUILD_DIR%\networklens.exe      (run from an Administrator prompt)
 echo.
 echo To verify the portable GUI build too (triggers a UAC prompt, writes
 echo %BUILD_DIR%\selftest_gui_log.txt):
-echo   %BUILD_DIR%\nmap-analyzer-gui.exe --self-test
+echo   %BUILD_DIR%\networklens-gui.exe --self-test
 echo.
 if not defined NO_PAUSE pause
 endlocal
@@ -423,7 +423,7 @@ echo   INSTALLER NOT BUILT - NSIS is not installed
 echo ==========================================
 echo.
 echo Everything else built and passed its self-test:
-echo   %BUILD_DIR%\nmap-analyzer.exe, %BUILD_DIR%\nmap-analyzer-gui.exe
+echo   %BUILD_DIR%\networklens.exe, %BUILD_DIR%\networklens-gui.exe
 echo   %APP_DIR%\
 echo.
 echo To get the installer, install NSIS (free, one time):

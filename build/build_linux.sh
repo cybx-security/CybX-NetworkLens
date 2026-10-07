@@ -10,7 +10,7 @@ BUILD_DIR="$PROJECT_DIR/dist"
 BINARIES_DIR="$PROJECT_DIR/binaries/linux"
 
 echo "=========================================="
-echo "  Nmap Analyzer - Linux Build Script"
+echo "  CybX NetworkLens - Linux Build Script"
 echo "=========================================="
 
 # Check for Python
@@ -81,9 +81,9 @@ cd "$PROJECT_DIR"
 # ============================================================
 # Build 1: CLI binary
 # ============================================================
-echo "[*] Building CLI executable (nmap-analyzer)..."
+echo "[*] Building CLI executable (networklens)..."
 pyinstaller \
-    --name nmap-analyzer \
+    --name networklens \
     --onefile \
     --console \
     --noconfirm \
@@ -102,9 +102,9 @@ pyinstaller \
 # Build 2: GUI binary
 # ============================================================
 echo ""
-echo "[*] Building GUI executable (nmap-analyzer-gui)..."
+echo "[*] Building GUI executable (networklens-gui)..."
 pyinstaller \
-    --name nmap-analyzer-gui \
+    --name networklens-gui \
     --onefile \
     --windowed \
     --noconfirm \
@@ -124,7 +124,7 @@ echo ""
 # The file-presence checks above only catch problems someone thought to list.
 # Running the binary we just built catches the rest: if it can scan localhost
 # end to end, the bundle is good.
-if ! "$BUILD_DIR/nmap-analyzer" --self-test; then
+if ! "$BUILD_DIR/networklens" --self-test; then
     echo ""
     echo "[!] The build completed but the executable cannot scan."
     echo "[!] Read the self-test output above - it names what is missing."
@@ -137,14 +137,14 @@ echo "=========================================="
 echo "  Build Complete!"
 echo "=========================================="
 echo ""
-echo "CLI executable: $BUILD_DIR/nmap-analyzer"
-echo "GUI executable: $BUILD_DIR/nmap-analyzer-gui"
+echo "CLI executable: $BUILD_DIR/networklens"
+echo "GUI executable: $BUILD_DIR/networklens-gui"
 echo ""
 echo "CLI usage (needs sudo for SYN scan / OS detection):"
-echo "  sudo $BUILD_DIR/nmap-analyzer --target 192.168.1.0/24"
+echo "  sudo $BUILD_DIR/networklens --target 192.168.1.0/24"
 echo ""
 echo "GUI usage (needs sudo for SYN scan / OS detection):"
-echo "  sudo $BUILD_DIR/nmap-analyzer-gui"
+echo "  sudo $BUILD_DIR/networklens-gui"
 echo ""
 echo "Note: Linux does not auto-elevate. Run with sudo from a terminal,"
 echo "or use a .desktop launcher with 'pkexec' if you want GUI elevation prompts."

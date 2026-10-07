@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quick test script for the nmap analyzer modules."""
+"""Quick test script for the CybX NetworkLens modules."""
 
 import sys
 from pathlib import Path
@@ -554,16 +554,16 @@ import hashlib, os, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 _installer = b"MZ fake installer " * 2000
-_sums = hashlib.sha256(_installer).hexdigest() + "  CybXNetworkScanner-Setup-9.9.9.exe\n"
+_sums = hashlib.sha256(_installer).hexdigest() + "  CybXNetworkLens-Setup-9.9.9.exe\n"
 _state = {"with_sums": True, "corrupt": False}
 
 class _FakeGitHub(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
         if self.path.endswith("/releases/latest"):
-            assets = [{"name": "CybXNetworkScanner-Setup-9.9.9.exe", "size": len(_installer),
+            assets = [{"name": "CybXNetworkLens-Setup-9.9.9.exe", "size": len(_installer),
                        "browser_download_url": f"http://127.0.0.1:{_port}/dl/setup.exe"},
-                      {"name": "nmap-analyzer.exe", "size": 1, "browser_download_url": "x"}]
+                      {"name": "networklens.exe", "size": 1, "browser_download_url": "x"}]
             if _state["with_sums"]:
                 assets.append({"name": "SHA256SUMS", "size": len(_sums),
                                "browser_download_url": f"http://127.0.0.1:{_port}/dl/sums"})

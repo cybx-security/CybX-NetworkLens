@@ -63,7 +63,7 @@ def run_self_test(log: Callable[[str], None] = print) -> Tuple[bool, List[str]]:
     failures: List[str] = []
 
     log("=" * 60)
-    log(f"  CybX Network Scanner {__version__} - build self-test")
+    log(f"  CybX NetworkLens {__version__} - build self-test")
     log("=" * 60)
     log("")
 

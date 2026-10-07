@@ -1,4 +1,4 @@
-# CybX Network Scanner → CybX Insight (collector setup)
+# CybX NetworkLens → CybX Insight (collector setup)
 
 This folder contains the one-time setup that connects this scanner to the
 **CybX Insight** dashboard. It's engineer-facing: a CybX engineer installs it once
@@ -16,7 +16,7 @@ the Insight project). This scanner produces exactly those events.
 ## The data flow
 
 ```
- nmap  ─►  CybX Network Scanner  ─►  events.ndjson  ─►  Insights collector (agent, json)
+ nmap  ─►  CybX NetworkLens  ─►  events.ndjson  ─►  Insights collector (agent, json)
                                                               │
                                                               ▼
                                                     Insights collector (decoders + these rules)
@@ -74,7 +74,7 @@ exact fields the dashboard maps to a `NetworkEvent`. `agent.id`, `agent.name`,
 
 3. **Scanner** — point it at that same file so scanner and collector agree. Edit
    the scanner's config file — for an installed copy on Windows that is
-   `C:\ProgramData\CybX\Network Scanner\config.json` (edit as Administrator; it
+   `C:\ProgramData\CybX\NetworkLens\config.json` (edit as Administrator; it
    survives upgrades); when running from source it is `config/config.json`:
 
    Windows scanner box (JSON needs `\\` — or use forward slashes, both work):

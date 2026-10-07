@@ -1,4 +1,4 @@
-# CybX Network Scanner build dependencies
+# CybX NetworkLens build dependencies
 # Runtime uses only the Python standard library (tkinter, subprocess, xml, json).
 # PyInstaller is only needed to build the standalone executables.
 pyinstaller>=6.0.0

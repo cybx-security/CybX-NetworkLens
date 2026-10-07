@@ -1,4 +1,4 @@
-# CybX Network Scanner
+# CybX NetworkLens
 
 A portable, cross-platform network scanner with both a **graphical interface** and a
 **command-line interface**. It runs nmap scans, parses the results, applies an offline
@@ -84,40 +84,42 @@ On Windows, `build\build_windows.bat` produces all of these in `dist\`:
 
 | Output | What it is | Notes |
 |---|---|---|
-| `CybXNetworkScanner-Setup-<version>.exe` | **The installer** | Give this to users. See [Installing on Windows](#installing-on-windows-for-users). |
-| `nmap-analyzer-gui.exe` | Portable GUI | Single file, no install. Double-click; **auto-elevates via UAC.** |
-| `nmap-analyzer.exe` | Portable CLI | Single file. Run from an Administrator prompt. |
-| `CybXNetworkScanner\` | Installed-app folder | What the installer packages. Not for handing out directly. |
+| `CybXNetworkLens-Setup-<version>.exe` | **The installer** | Give this to users. See [Installing on Windows](#installing-on-windows-for-users). |
+| `networklens-gui.exe` | Portable GUI | Single file, no install. Double-click; **auto-elevates via UAC.** |
+| `networklens.exe` | Portable CLI | Single file. Run from an Administrator prompt. |
+| `CybXNetworkLens\` | Installed-app folder | What the installer packages. Not for handing out directly. |
 
 The macOS and Linux build scripts produce the two portable executables only
-(`nmap-analyzer` and `nmap-analyzer-gui`); there is no installer for those platforms.
+(`networklens` and `networklens-gui`); there is no installer for those platforms.
 
 ---
 
 ## Installing on Windows (for users)
 
-1. Double-click **`CybXNetworkScanner-Setup-<version>.exe`** and approve the Windows
+1. Double-click **`CybXNetworkLens-Setup-<version>.exe`** and approve the Windows
    permission prompt.
 2. Click through the wizard. It installs the scanner for everyone on the computer,
    adds a **Desktop icon** and a **Start Menu** entry, and — if Npcap isn't already on
    the machine — opens Npcap's own setup window (click Next / Install in it).
-3. Launch **CybX Network Scanner** from the Desktop icon. Windows asks for permission
+3. Launch **CybX NetworkLens** from the Desktop icon. Windows asks for permission
    each time it starts, because scanning needs administrator rights.
 
-**Uninstalling:** Settings > Apps > Installed apps > CybX Network Scanner > Uninstall
+**Uninstalling:** Settings > Apps > Installed apps > CybX NetworkLens > Uninstall
 (or run `Uninstall.exe` in the install folder). It removes the program and its
 shortcuts. It asks whether to also delete the settings file, and it never deletes
 saved scan reports. Npcap is left installed, since other tools may use it.
 
 | What | Where |
 |---|---|
-| Program | `C:\Program Files\CybX Network Scanner\` |
-| Settings | `C:\ProgramData\CybX\Network Scanner\config.json` (kept across upgrades) |
-| Scan reports | `Documents\CybX Network Scanner\output\` |
-| Command line | `"C:\Program Files\CybX Network Scanner\nmap-analyzer.exe" --target ...` (Administrator prompt) |
+| Program | `C:\Program Files\CybX NetworkLens\` |
+| Settings | `C:\ProgramData\CybX\NetworkLens\config.json` (kept across upgrades) |
+| Scan reports | `Documents\CybX NetworkLens\output\` |
+| Command line | `"C:\Program Files\CybX NetworkLens\networklens.exe" --target ...` (Administrator prompt) |
 
 Installing a newer version over an older one upgrades in place and keeps settings and
-reports. For unattended deployment: `CybXNetworkScanner-Setup-<version>.exe /S`
+reports. (Before 1.2.0 the product was called *CybX Network Scanner*; installing
+NetworkLens over it removes the old entry and carries its settings across. Reports it
+saved stay in `Documents\CybX Network Scanner`.) For unattended deployment: `CybXNetworkLens-Setup-<version>.exe /S`
 (add `/NODESKTOP` to skip the Desktop icon), and `Uninstall.exe /S` (add `/PURGE` to
 also remove settings). A silent install cannot install Npcap — its free installer has
 no silent mode — so the scanner offers it on first launch instead.
@@ -227,7 +229,7 @@ every file `binaries\windows\` must contain is in
 1. Open **Command Prompt** (search "cmd" in Start menu)
 2. Navigate to this folder:
    ```cmd
-   cd C:\path\to\CybXNetworkScanner
+   cd C:\path\to\CybXNetworkLens
    ```
 3. Install build dependencies:
    ```cmd
@@ -253,7 +255,7 @@ produced. A build that ends with `Build Complete - self-tests PASSED` can scan.
 You never have to guess whether a build works. Run it:
 
 ```cmd
-dist\nmap-analyzer.exe --self-test
+dist\networklens.exe --self-test
 ```
 
 It scans localhost through the real pipeline — the bundled nmap, the script
@@ -265,7 +267,7 @@ To check the GUI executable too (this one triggers a UAC prompt and writes
 `dist\selftest_gui_log.txt`):
 
 ```cmd
-dist\nmap-analyzer-gui.exe --self-test
+dist\networklens-gui.exe --self-test
 ```
 
 What the self-test proves: the bundle is complete and a scan runs end to end.
@@ -275,13 +277,13 @@ depends on Npcap and Administrator rights there. The app checks those at startup
 ### Step 4: Done! Hand out the installer, or go portable
 
 Everything is now in `dist\`:
-- `dist\CybXNetworkScanner-Setup-<version>.exe` — **the installer**; see
+- `dist\CybXNetworkLens-Setup-<version>.exe` — **the installer**; see
   [Installing on Windows](#installing-on-windows-for-users)
-- `dist\nmap-analyzer-gui.exe` — the portable graphical scanner
-- `dist\nmap-analyzer.exe` — the portable command-line scanner
+- `dist\networklens-gui.exe` — the portable graphical scanner
+- `dist\networklens.exe` — the portable command-line scanner
 
 **To use the portable GUI instead of installing:**
-1. Copy `dist\nmap-analyzer-gui.exe` to your USB stick
+1. Copy `dist\networklens-gui.exe` to your USB stick
 2. On any Windows computer, double-click it
 3. Approve the **UAC prompt** (the GUI auto-elevates to Administrator)
 4. If Npcap isn't installed, approve the **"Install Npcap?"** dialog and click through
@@ -321,12 +323,12 @@ needs right-click > Open (or allowing it under System Settings > Privacy & Secur
 
 ```bash
 # CLI (needs sudo for SYN scan / OS detection)
-sudo ./dist/nmap-analyzer --target 192.168.1.0/24
+sudo ./dist/networklens --target 192.168.1.0/24
 
 # GUI
-open ./dist/nmap-analyzer-gui.app
+open ./dist/networklens-gui.app
 # For full scan capabilities, launch the GUI with sudo from Terminal:
-sudo ./dist/nmap-analyzer-gui.app/Contents/MacOS/nmap-analyzer-gui
+sudo ./dist/networklens-gui.app/Contents/MacOS/networklens-gui
 ```
 
 macOS uses the built-in libpcap, so there is no Npcap-equivalent step. macOS does not
@@ -353,10 +355,10 @@ chmod +x build/build_linux.sh
 ### Run
 ```bash
 # CLI
-sudo ./dist/nmap-analyzer --target 192.168.1.0/24
+sudo ./dist/networklens --target 192.168.1.0/24
 
 # GUI
-sudo ./dist/nmap-analyzer-gui
+sudo ./dist/networklens-gui
 ```
 
 Linux uses the system libpcap. Linux does not auto-elevate — run with `sudo`, or wire up
@@ -412,7 +414,7 @@ app closes, the update installs silently, and the app reopens on the new version
 Settings and saved reports are kept. The app also checks once at startup and shows a
 note in the status bar if an update exists; it never installs anything without being
 asked. The portable exe, macOS and Linux builds can't replace themselves, so there the
-button opens the download page instead. `nmap-analyzer --check-update` does the same
+button opens the download page instead. `networklens --check-update` does the same
 check from the command line (exit code 10 = update available).
 
 **Privacy:** the check is one request to `api.github.com` for the latest release. It
@@ -426,7 +428,7 @@ the button still works on demand.
 2. Tag and push: `git tag v1.2.0 && git push origin main v1.2.0`.
 3. GitHub Actions ([`release.yml`](.github/workflows/release.yml)) builds the Windows
    installer on a Windows runner — bundling nmap from nmap.org and running the same
-   self-tests as a local build — and attaches `CybXNetworkScanner-Setup-1.2.0.exe`,
+   self-tests as a local build — and attaches `CybXNetworkLens-Setup-1.2.0.exe`,
    the portable exes and `SHA256SUMS` to a **draft** release.
 4. Review the draft on the Releases page and click **Publish**. From that moment
    every installed copy's *Check for Updates* offers it. Nothing reaches customers
@@ -444,13 +446,13 @@ Npcap (its free licence doesn't allow redistribution); a release built locally w
 ## Usage (CLI)
 
 ```
-nmap-analyzer --target 192.168.1.0/24            # Scan a subnet
-nmap-analyzer --target 192.168.1.1 -p 22,80,443  # Specific ports
-nmap-analyzer --target 192.168.1.0/24 -T 5       # Fast scan
-nmap-analyzer --target 192.168.1.0/24 --no-vuln  # Skip vuln scripts (faster)
-nmap-analyzer --target 192.168.1.0/24 -o out.json # Custom output path
-nmap-analyzer --gui                              # Launch the GUI
-nmap-analyzer                                    # No args = launch the GUI
+networklens --target 192.168.1.0/24            # Scan a subnet
+networklens --target 192.168.1.1 -p 22,80,443  # Specific ports
+networklens --target 192.168.1.0/24 -T 5       # Fast scan
+networklens --target 192.168.1.0/24 --no-vuln  # Skip vuln scripts (faster)
+networklens --target 192.168.1.0/24 -o out.json # Custom output path
+networklens --gui                              # Launch the GUI
+networklens                                    # No args = launch the GUI
 ```
 
 Each run writes two files next to each other: the JSON report and the `.ndjson`
@@ -482,7 +484,7 @@ Insights events (see [Output](#output)).
 
 ## Usage (GUI)
 
-1. Launch **CybX Network Scanner** from the Desktop icon (or `nmap-analyzer-gui` for
+1. Launch **CybX NetworkLens** from the Desktop icon (or `networklens-gui` for
    the portable build). On Windows it auto-elevates.
 2. Enter a **Target** (IP, range, or CIDR) and optionally specific **Ports**.
 3. Pick a **Scan mode**:
@@ -512,7 +514,7 @@ Insights events (see [Output](#output)).
 
 Which config file is used:
 
-- **Installed (Windows):** `C:\ProgramData\CybX\Network Scanner\config.json`. The
+- **Installed (Windows):** `C:\ProgramData\CybX\NetworkLens\config.json`. The
   installer creates it and upgrades never overwrite it. Edit it as Administrator.
 - **Portable exe:** a `config.json` placed next to the exe, if there is one; otherwise
   the installed one above; otherwise the defaults built into the exe.
@@ -557,7 +559,7 @@ with a warning.
 - `updates.check_on_startup` — look for a new release when the app starts (see [Updates](#updates)).
 - `output.directory` — where reports and event files are written. An absolute path is
   used as-is. A relative one (like the default) is placed under
-  `Documents\CybX Network Scanner\` for an installed or portable build, and under the
+  `Documents\CybX NetworkLens\` for an installed or portable build, and under the
   repo folder when running from source — never under whatever folder the app happened
   to be started from.
 - `output.include_raw_nmap` — embed the raw nmap XML in the JSON report.
@@ -630,7 +632,7 @@ a clear picture of what is actually listening across a customer's internal netwo
 ## Directory Structure
 
 ```
-CybXNetworkScanner/
+CybXNetworkLens/
 ├── src/                 # Python source code
 │   ├── main.py          # CLI entry point (and GUI launcher)
 │   ├── gui.py           # Tkinter GUI
@@ -704,5 +706,5 @@ nothing — but you'll miss SNMP/IPMI/TFTP (UDP), OS fingerprints, and topology.
 | Build ends with `INSTALLER NOT BUILT` | NSIS isn't installed — `winget install NSIS.NSIS`, then re-run the build |
 | Windows SmartScreen / antivirus blocks the installer or .exe | Unsigned PyInstaller binaries often trip heuristics on first run — **More info > Run anyway**, or whitelist it |
 | Slow startup of the portable GUI | A single-file exe unpacks to temp on each launch. The installed version doesn't — use the installer |
-| Can't find my scan reports | Click **Open Output Folder**; installed and portable builds save to `Documents\CybX Network Scanner\output` |
+| Can't find my scan reports | Click **Open Output Folder**; installed and portable builds save to `Documents\CybX NetworkLens\output` |
 | Settings changes are ignored | The Live Log names the config file in use at startup, and warns if it couldn't be read (usually an unescaped `\` in a path) |

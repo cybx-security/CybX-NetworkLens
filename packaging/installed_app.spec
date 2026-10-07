@@ -3,9 +3,9 @@
 # PyInstaller spec for the INSTALLED layout - the folder the Windows installer
 # (packaging/windows/installer.nsi) copies into Program Files:
 #
-#   dist/CybXNetworkScanner/
-#       CybXNetworkScanner.exe   GUI: windowed, elevates through UAC
-#       nmap-analyzer.exe        CLI: console, same engine
+#   dist/CybXNetworkLens/
+#       CybXNetworkLens.exe   GUI: windowed, elevates through UAC
+#       networklens.exe        CLI: console, same engine
 #       _internal/               Python runtime, nmap, Npcap installer, icon
 #
 # Why a folder and not the single-file exes the build scripts also make: a
@@ -56,7 +56,7 @@ gui_exe = EXE(
     gui_a.scripts,
     [],
     exclude_binaries=True,
-    name='CybXNetworkScanner',
+    name='CybXNetworkLens',
     console=False,
     # Scans need raw sockets, so the GUI always asks for elevation at launch.
     uac_admin=True,
@@ -68,7 +68,7 @@ cli_exe = EXE(
     cli_a.scripts,
     [],
     exclude_binaries=True,
-    name='nmap-analyzer',
+    name='networklens',
     console=True,
     icon=ICON,
 )
@@ -80,5 +80,5 @@ COLLECT(
     gui_a.datas,
     cli_a.binaries,
     cli_a.datas,
-    name='CybXNetworkScanner',
+    name='CybXNetworkLens',
 )

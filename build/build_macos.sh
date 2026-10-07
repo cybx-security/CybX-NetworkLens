@@ -10,7 +10,7 @@ BUILD_DIR="$PROJECT_DIR/dist"
 BINARIES_DIR="$PROJECT_DIR/binaries/macos"
 
 echo "=========================================="
-echo "  CybX Network Scanner - macOS Build"
+echo "  CybX NetworkLens - macOS Build"
 echo "=========================================="
 
 # Check for Python
@@ -63,9 +63,9 @@ cd "$PROJECT_DIR"
 # ============================================================
 # Build 1: CLI binary
 # ============================================================
-echo "[*] Building CLI executable (nmap-analyzer)..."
+echo "[*] Building CLI executable (networklens)..."
 pyinstaller \
-    --name nmap-analyzer \
+    --name networklens \
     --onefile \
     --console \
     --noconfirm \
@@ -84,9 +84,9 @@ pyinstaller \
 # Build 2: GUI binary (windowed → produces .app bundle)
 # ============================================================
 echo ""
-echo "[*] Building GUI executable (nmap-analyzer-gui.app)..."
+echo "[*] Building GUI executable (networklens-gui.app)..."
 pyinstaller \
-    --name nmap-analyzer-gui \
+    --name networklens-gui \
     --onefile \
     --windowed \
     --icon packaging/icon/icon.icns \
@@ -108,7 +108,7 @@ echo ""
 # The file-presence checks above only catch problems someone thought to list.
 # Running the binary we just built catches the rest: if it can scan localhost
 # end to end, the bundle is good.
-if ! (cd / && "$BUILD_DIR/nmap-analyzer" --self-test); then
+if ! (cd / && "$BUILD_DIR/networklens" --self-test); then
     echo ""
     echo "[!] The build completed but the executable cannot scan."
     echo "[!] Read the self-test output above - it names what is missing."
@@ -121,16 +121,16 @@ echo "=========================================="
 echo "  Build Complete!"
 echo "=========================================="
 echo ""
-echo "CLI executable: $BUILD_DIR/nmap-analyzer"
-echo "GUI app bundle: $BUILD_DIR/nmap-analyzer-gui.app"
+echo "CLI executable: $BUILD_DIR/networklens"
+echo "GUI app bundle: $BUILD_DIR/networklens-gui.app"
 echo ""
 echo "CLI usage (needs sudo for SYN scan / OS detection):"
-echo "  sudo $BUILD_DIR/nmap-analyzer --target 192.168.1.0/24"
+echo "  sudo $BUILD_DIR/networklens --target 192.168.1.0/24"
 echo ""
 echo "GUI usage:"
-echo "  open $BUILD_DIR/nmap-analyzer-gui.app"
+echo "  open $BUILD_DIR/networklens-gui.app"
 echo "  (Note: macOS does not auto-elevate — to scan with SYN/OS detection,"
-echo "   launch from Terminal with: sudo $BUILD_DIR/nmap-analyzer-gui.app/Contents/MacOS/nmap-analyzer-gui)"
+echo "   launch from Terminal with: sudo $BUILD_DIR/networklens-gui.app/Contents/MacOS/networklens-gui)"
 echo ""
 echo "The bundled nmap is for this Mac's CPU ($(uname -m)) only; build on an"
 echo "Intel Mac for Intel users. Unsigned: first launch needs right-click > Open."

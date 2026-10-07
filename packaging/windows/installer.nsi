@@ -1,25 +1,25 @@
-; CybX Network Scanner Setup - the Windows setup wizard (NSIS 3).
+; CybX NetworkLens Setup - the Windows setup wizard (NSIS 3).
 ;
 ; Installs the folder build made by packaging/installed_app.spec into Program
 ; Files, adds Start Menu and Desktop shortcuts, lists the app under
 ; Settings > Apps > Installed apps, and writes an uninstaller.
 ;
 ; Built by build\build_windows.bat:
-;   makensis /DVERSION=1.1.0 /DSRC=<dist\CybXNetworkScanner> /DICON=<icon.ico>
+;   makensis /DVERSION=1.1.0 /DSRC=<dist\CybXNetworkLens> /DICON=<icon.ico>
 ;            /DCONFIG=<config\config.json> /DOUTFILE=<setup.exe> installer.nsi
 ; (use -D instead of /D with makensis on macOS/Linux). SRC is the folder
-; holding CybXNetworkScanner.exe, nmap-analyzer.exe and _internal\.
+; holding CybXNetworkLens.exe, networklens.exe and _internal\.
 ;
-; Silent use (RMM, scripts):  CybXNetworkScanner-Setup-x.y.z.exe /S [/NODESKTOP] [/RELAUNCH]
+; Silent use (RMM, scripts):  CybXNetworkLens-Setup-x.y.z.exe /S [/NODESKTOP] [/RELAUNCH]
 ;   /RELAUNCH starts the app when the install finishes - how the app's own
 ;   "Check for Updates" applies a downloaded release (src/updater.py).
-; Silent removal:             "%ProgramFiles%\CybX Network Scanner\Uninstall.exe" /S [/PURGE]
+; Silent removal:             "%ProgramFiles%\CybX NetworkLens\Uninstall.exe" /S [/PURGE]
 ; Exit code 0 = success, 2 = failed.
 ;
 ; Where things go (must match src/paths.py):
-;   program    %ProgramFiles%\CybX Network Scanner\
-;   settings   %ProgramData%\CybX\Network Scanner\config.json   (kept on upgrade)
-;   reports    Documents\CybX Network Scanner\output\            (never touched here)
+;   program    %ProgramFiles%\CybX NetworkLens\
+;   settings   %ProgramData%\CybX\NetworkLens\config.json   (kept on upgrade)
+;   reports    Documents\CybX NetworkLens\output\            (never touched here)
 
 Unicode true
 SetCompressor /SOLID lzma
@@ -34,7 +34,7 @@ SetCompressor /SOLID lzma
   !error "VERSION is not defined (build with build\build_windows.bat)"
 !endif
 !ifndef SRC
-  !error "SRC is not defined (the dist\CybXNetworkScanner folder)"
+  !error "SRC is not defined (the dist\CybXNetworkLens folder)"
 !endif
 !ifndef ICON
   !error "ICON is not defined (packaging\icon\icon.ico)"
@@ -47,9 +47,9 @@ SetCompressor /SOLID lzma
 !endif
 
 ; Fail the installer build, not the install, when the payload is incomplete.
-!if /FileExists "${SRC}\CybXNetworkScanner.exe"
+!if /FileExists "${SRC}\CybXNetworkLens.exe"
 !else
-  !error "CybXNetworkScanner.exe not found in SRC - build packaging\installed_app.spec first"
+  !error "CybXNetworkLens.exe not found in SRC - build packaging\installed_app.spec first"
 !endif
 !if /FileExists "${SRC}\_internal\binaries\windows\nmap.exe"
 !else
@@ -63,10 +63,10 @@ SetCompressor /SOLID lzma
   !define HAVE_NPCAP
 !endif
 
-!define APPNAME "CybX Network Scanner"
-!define GUI_EXE "CybXNetworkScanner.exe"
-!define CLI_EXE "nmap-analyzer.exe"
-!define ARP "Software\Microsoft\Windows\CurrentVersion\Uninstall\CybXNetworkScanner"
+!define APPNAME "CybX NetworkLens"
+!define GUI_EXE "CybXNetworkLens.exe"
+!define CLI_EXE "networklens.exe"
+!define ARP "Software\Microsoft\Windows\CurrentVersion\Uninstall\CybXNetworkLens"
 
 Name "${APPNAME}"
 OutFile "${OUTFILE}"
@@ -136,6 +136,30 @@ FunctionEnd
   Sleep 500
 !macroend
 
+; Before 1.2.0 the product was "CybX Network Scanner": different install
+; folder, uninstall key, shortcuts and settings path. An upgrade over one of
+; those installs removes it first (its own uninstaller, silently) and carries
+; the settings file over, so nothing is left behind in Installed apps.
+!define OLD_ARP "Software\Microsoft\Windows\CurrentVersion\Uninstall\CybXNetworkScanner"
+!macro MigrateOldInstall
+  ReadRegStr $0 HKLM "${OLD_ARP}" "UninstallString"
+  ${If} $0 != ""
+    DetailPrint "Removing the previous 'CybX Network Scanner' install..."
+    ${If} ${FileExists} "$APPDATA\CybX\Network Scanner\config.json"
+    ${AndIfNot} ${FileExists} "$APPDATA\CybX\NetworkLens\config.json"
+      CreateDirectory "$APPDATA\CybX\NetworkLens"
+      CopyFiles /SILENT "$APPDATA\CybX\Network Scanner\config.json" "$APPDATA\CybX\NetworkLens\config.json"
+      DetailPrint "Settings carried over from the previous install."
+    ${EndIf}
+    nsExec::Exec 'taskkill /F /T /IM CybXNetworkScanner.exe'
+    Pop $1
+    ; $0 is quoted ("...\Uninstall.exe"); /PURGE drops the old settings copy.
+    ExecWait '$0 /S /PURGE' $1
+    DetailPrint "Previous install removed (code $1)."
+    DeleteRegKey HKLM "${OLD_ARP}"
+  ${EndIf}
+!macroend
+
 ; WaitForUnlock gives a copy of the app that is shutting down on its own (the
 ; self-updater exits right after starting Setup) a moment to let go of its
 ; files, instead of tearing it down mid-exit. A running exe cannot be opened
@@ -163,6 +187,7 @@ FunctionEnd
 Section "${APPNAME}" SecMain
   SectionIn RO
   SetShellVarContext all
+  !insertmacro MigrateOldInstall
   !insertmacro WaitForUnlock
   !insertmacro StopApp
 
@@ -185,11 +210,11 @@ Section "${APPNAME}" SecMain
 
   ; Default settings, machine-wide. Never overwritten: an upgrade must keep
   ; the Insights feed path and scan defaults already configured here.
-  SetOutPath "$APPDATA\CybX\Network Scanner"
+  SetOutPath "$APPDATA\CybX\NetworkLens"
   SetOverwrite off
   File "/oname=config.json" "${CONFIG}"
   SetOverwrite try
-  DetailPrint "Settings: $APPDATA\CybX\Network Scanner\config.json"
+  DetailPrint "Settings: $APPDATA\CybX\NetworkLens\config.json"
 
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -346,13 +371,13 @@ Section "Uninstall"
   DeleteRegKey HKLM "${ARP}"
 
   ${If} $Purge == "1"
-    Delete "$APPDATA\CybX\Network Scanner\config.json"
-    RMDir "$APPDATA\CybX\Network Scanner"
+    Delete "$APPDATA\CybX\NetworkLens\config.json"
+    RMDir "$APPDATA\CybX\NetworkLens"
     ; Removed only if empty - the Insights collector feed may live beside it.
     RMDir "$APPDATA\CybX"
     DetailPrint "Settings removed."
   ${Else}
-    DetailPrint "Settings kept: $APPDATA\CybX\Network Scanner\config.json"
+    DetailPrint "Settings kept: $APPDATA\CybX\NetworkLens\config.json"
   ${EndIf}
 
   DetailPrint "Scan reports in Documents > ${APPNAME} were left in place."

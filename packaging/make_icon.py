@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the CybX Network Scanner app icon and writes it in every format the
+"""Draws the CybX NetworkLens app icon and writes it in every format the
 build needs: packaging/icon/icon.png (256 px, also the Linux/macOS window
 icon), icon.ico (Windows exe, shortcuts, installer) and icon.icns (macOS, via
 iconutil).

@@ -1,5 +1,5 @@
 """
-Tkinter GUI for the CybX Network Scanner.
+Tkinter GUI for the CybX NetworkLens.
 
 Runs entirely on stdlib (tkinter) so it bundles cleanly with PyInstaller
 and adds no runtime dependencies. The scan executes in a worker thread;
@@ -67,7 +67,7 @@ HOST_DISCOVERED_RE = re.compile(r"Nmap scan report for (.+)")
 class ScannerGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title(f"CybX Network Scanner {__version__}")
+        self.root.title(f"CybX NetworkLens {__version__}")
         self.root.geometry("1000x750")
         self.root.minsize(800, 600)
 
@@ -1185,7 +1185,7 @@ class ScannerGUI:
                 self.status_var.set(f"Up to date ({__version__}).")
                 self._log(f"[+] You have the latest version ({__version__}).", "ok")
                 messagebox.showinfo("Up to date",
-                                    f"CybX Network Scanner {__version__} is the latest version.")
+                                    f"CybX NetworkLens {__version__} is the latest version.")
             return
 
         self._log(f"[!] Version {release.version} is available (you have {__version__}): {release.url}", "warn")
@@ -1240,7 +1240,7 @@ class ScannerGUI:
 
         def worker() -> None:
             try:
-                dest = Path(tempfile.gettempdir()) / "CybXNetworkScanner-update"
+                dest = Path(tempfile.gettempdir()) / "CybXNetworkLens-update"
                 path = updater.download_installer(
                     release, str(dest), __version__,
                     progress=lambda done, total: self.event_queue.put(("update_progress", (done, total))))

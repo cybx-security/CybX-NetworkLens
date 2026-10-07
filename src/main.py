@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CybX Network Scanner - Portable Network Scanner
+CybX NetworkLens - Portable Network Scanner
 
 A cross-platform tool that runs nmap scans, parses the results, and analyzes
 them with an offline rule engine. Output is written two ways: a full JSON
@@ -124,7 +124,7 @@ def _positive_int(value: str) -> int:
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="CybX Network Scanner - portable nmap scanner with local analysis",
+        description="CybX NetworkLens - portable nmap scanner with local analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

@@ -1,4 +1,4 @@
-# CybX Network Scanner — User Guide
+# CybX NetworkLens — User Guide
 
 This guide explains how to run a scan and how to read the results. It's written for
 the person running the scan and for anyone reviewing the findings with a customer.
@@ -42,12 +42,12 @@ Each scan produces two things:
 
 ### Installing (Windows)
 
-Double-click `CybXNetworkScanner-Setup-<version>.exe`, approve the Windows permission
-prompt, and click through the wizard. You get a **CybX Network Scanner** icon on the
+Double-click `CybXNetworkLens-Setup-<version>.exe`, approve the Windows permission
+prompt, and click through the wizard. You get a **CybX NetworkLens** icon on the
 Desktop and in the Start Menu. If Windows shows "Windows protected your PC", click
 **More info > Run anyway**.
 
-To remove it: Settings > Apps > Installed apps > CybX Network Scanner > Uninstall.
+To remove it: Settings > Apps > Installed apps > CybX NetworkLens > Uninstall.
 Your saved scan reports are kept.
 
 ### Updating
@@ -65,8 +65,8 @@ installs anything until you say yes.
 
 ### The graphical app (easiest)
 
-1. Launch the scanner — the **CybX Network Scanner** Desktop icon (or
-   `nmap-analyzer-gui` if you're using the portable version). On Windows, approve the
+1. Launch the scanner — the **CybX NetworkLens** Desktop icon (or
+   `networklens-gui` if you're using the portable version). On Windows, approve the
    elevation prompt.
 2. Enter a **Target**. This can be:
    - a single host — `192.168.1.10`
@@ -100,7 +100,7 @@ installs anything until you say yes.
    - **Save Report...** — the full JSON report.
    - **Save Insights Events...** — the per-port events for CybX Insight.
    - **Open Output Folder** — every finished scan is saved here automatically
-     (`Documents\CybX Network Scanner\output`), so nothing is lost if you forget to save.
+     (`Documents\CybX NetworkLens\output`), so nothing is lost if you forget to save.
 
    **Stop** ends a scan early. A stopped scan is not saved.
 
@@ -108,21 +108,21 @@ installs anything until you say yes.
 
 ```bash
 # Full scan of a subnet (run with sudo / as Administrator for best results)
-sudo nmap-analyzer --target 192.168.1.0/24
+sudo networklens --target 192.168.1.0/24
 
 # Quick sweep (ports + services only, fast)
-sudo nmap-analyzer --target 192.168.1.0/24 --quick
+sudo networklens --target 192.168.1.0/24 --quick
 
 # Just a few ports
-sudo nmap-analyzer --target 192.168.1.10 -p 22,80,443
+sudo networklens --target 192.168.1.10 -p 22,80,443
 
 # Write the report to a specific file
-sudo nmap-analyzer --target 10.0.0.0/24 -o customer_scan.json
+sudo networklens --target 10.0.0.0/24 -o customer_scan.json
 ```
 
 Common options: `--quick` (fast mode), `--no-udp` / `--no-vuln` (drop the slow parts),
 `-T 0..5` (speed, higher is faster/noisier), `-p` (specific ports). Run
-`nmap-analyzer --help` for the full list.
+`networklens --help` for the full list.
 
 ### How long does it take?
 
