@@ -1,0 +1,30 @@
+# ---- Build artifacts ----
+dist/
+build/*.spec
+*.spec
+!packaging/*.spec
+build/build_log.txt
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# ---- Bundled third-party binaries / installers (large, license-restricted) ----
+binaries/windows/*
+binaries/macos/*
+binaries/linux/*
+!binaries/*/README.txt
+installers/windows/*.exe
+
+# ---- Scan output ----
+output/*.json
+output/*.ndjson
+!output/.gitkeep
+
+# ---- OS cruft ----
+.DS_Store
+
+# ---- Local tooling / build work dirs ----
+.claude/
+build/*/
+build/build_log.txt

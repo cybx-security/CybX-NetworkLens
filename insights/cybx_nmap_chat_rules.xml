@@ -1,0 +1,77 @@
+<!--
+  ============================================================================
+  CybX Network Scanner  ->  CybX Insight
+  INSIGHTS COLLECTOR RULES
+  ============================================================================
+
+  CybX Insight's collector runs on a Wazuh/OSSEC engine; the commands and paths
+  below are that engine's real service names — type them as-is during setup.
+
+  Install on the Insights collector (manager side):
+      sudo cp cybx_nmap_chat_rules.xml /var/ossec/etc/rules/
+      sudo chown wazuh:wazuh /var/ossec/etc/rules/cybx_nmap_chat_rules.xml
+      sudo systemctl restart wazuh-manager
+
+  What these rules do:
+  The scanner writes one JSON object per open port (NDJSON), each tagged
+  "integration":"nmap_chat". The collector reads that file with
+  <log_format>json</log_format>, so its built-in JSON decoder parses every line
+  automatically — no custom decoder is required for this path. (An OPTIONAL
+  decoder for non-JSON ingestion is in cybx_nmap_chat_decoders.xml.)
+
+  After decoding, the JSON keys are addressable in rules by dotted path
+  (`integration`, `nmap.risk`, ...) and land in the index under `data.*`
+  (`data.integration`, `data.nmap.host`, ...). CybX Insight's getNetworkEvents
+  query filters on `data.integration: "nmap_chat"` and reads `rule.description`
+  plus `data.nmap.*` — it does NOT depend on a specific rule id, so the ids below
+  are free to change. A rule only reaches Insight if it ALERTS (level >= 1),
+  which is why even info-level ports fire at level 3.
+
+  Rule ids 100200-100205 are in the collector's user range (100000+). Change them
+  if they collide with other custom rules.
+-->
+<group name="cybx,nmap_chat,network_scan,">
+
+  <!-- Base match: any CybX network-scan event. level 0 = does not alert on its
+       own; it just anchors the per-risk children so they inherit the match. -->
+  <rule id="100200" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="integration">nmap_chat</field>
+    <description>CybX network scan event.</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- One child per risk tier. Each ALERTS (level >= 3) so it is written to the
+       alerts index the reporter reads. $(field) substitution puts the host/port
+       into rule.description, which is what Insight displays. -->
+  <rule id="100201" level="3">
+    <if_sid>100200</if_sid>
+    <field name="nmap.risk">info</field>
+    <description>CybX nmap: $(nmap.service) on $(nmap.host):$(nmap.port)/$(nmap.protocol) [info]</description>
+  </rule>
+
+  <rule id="100202" level="5">
+    <if_sid>100200</if_sid>
+    <field name="nmap.risk">low</field>
+    <description>CybX nmap: $(nmap.service) on $(nmap.host):$(nmap.port)/$(nmap.protocol) [low]</description>
+  </rule>
+
+  <rule id="100203" level="8">
+    <if_sid>100200</if_sid>
+    <field name="nmap.risk">medium</field>
+    <description>CybX nmap: $(nmap.service) on $(nmap.host):$(nmap.port)/$(nmap.protocol) [medium]</description>
+  </rule>
+
+  <rule id="100204" level="10">
+    <if_sid>100200</if_sid>
+    <field name="nmap.risk">high</field>
+    <description>CybX nmap: $(nmap.service) on $(nmap.host):$(nmap.port)/$(nmap.protocol) [high]</description>
+  </rule>
+
+  <rule id="100205" level="13">
+    <if_sid>100200</if_sid>
+    <field name="nmap.risk">critical</field>
+    <description>CybX nmap: $(nmap.service) on $(nmap.host):$(nmap.port)/$(nmap.protocol) [critical]</description>
+  </rule>
+
+</group>

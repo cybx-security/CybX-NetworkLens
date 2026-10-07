@@ -1,0 +1,22 @@
+{
+    "scan_options": {
+        "port_scan": true,
+        "service_detection": true,
+        "os_detection": true,
+        "vulnerability_scan": true,
+        "udp_scan": true,
+        "external_scripts": false,
+        "timing": 4
+    },
+    "output": {
+        "directory": "./output",
+        "include_raw_nmap": false,
+        "insights_events": {
+            "enabled": true,
+            "path": ""
+        }
+    },
+    "updates": {
+        "check_on_startup": true
+    }
+}

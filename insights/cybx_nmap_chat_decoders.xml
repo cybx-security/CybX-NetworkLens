@@ -1,0 +1,37 @@
+<!--
+  ============================================================================
+  CybX Network Scanner  ->  CybX Insight
+  INSIGHTS COLLECTOR DECODER  (OPTIONAL)
+  ============================================================================
+
+  CybX Insight's collector runs on a Wazuh/OSSEC engine; the commands and paths
+  below are that engine's real service names — type them as-is during setup.
+
+  You usually do NOT need this file.
+
+  The recommended ingestion path reads the scanner's NDJSON with
+  <log_format>json</log_format> (see ossec_localfile_snippet.xml). With that
+  format, the collector's built-in JSON decoder parses every line automatically
+  and the rules in cybx_nmap_chat_rules.xml fire on the decoded fields. A custom
+  decoder is not consulted on json-format logs, so adding one there has no effect.
+
+  Use THIS decoder only if you must ingest the events as plain text — e.g. the
+  collector reads the file with <log_format>syslog</log_format>, or the lines
+  arrive mixed into another log stream. It matches CybX nmap_chat lines by their
+  integration tag and JSON-decodes the whole line, producing the same fields
+  (integration, nmap.*, ai_assessment.*) the rules and Insight expect.
+
+  Install on the Insights collector (manager side):
+      sudo cp cybx_nmap_chat_decoders.xml /var/ossec/etc/decoders/
+      sudo chown wazuh:wazuh /var/ossec/etc/decoders/cybx_nmap_chat_decoders.xml
+      sudo systemctl restart wazuh-manager
+
+  Verify:
+      sudo /var/ossec/bin/wazuh-logtest
+      (paste one event line; you should see decoder 'cybx-nmap-chat' and the
+       nmap.* fields extracted, matching rule 100200 + a 1002xx child)
+-->
+<decoder name="cybx-nmap-chat">
+  <prematch>"integration":"nmap_chat"</prematch>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>

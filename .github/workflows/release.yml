@@ -1,0 +1,91 @@
+# Builds the Windows installer on a GitHub-hosted Windows runner and, for a
+# version tag, attaches it to a DRAFT release. Publishing the draft is a
+# deliberate click: the moment it is public, every installed copy's
+# "Check for Updates" offers it (src/updater.py reads /releases/latest).
+#
+#   git tag v1.2.0 && git push origin v1.2.0      -> build + draft release
+#   Actions > Release > Run workflow              -> build only (artifact)
+#
+# The build itself is build\build_windows.bat, unchanged: this workflow only
+# fetches what a developer would copy into binaries\windows by hand (the nmap
+# zip and the VC++ runtime DLLs - see binaries\windows\README.txt).
+#
+# Npcap is NOT bundled here (SKIP_NPCAP): the free Npcap licence does not
+# allow redistribution, and a public release is exactly that. The installer
+# and the app point users at npcap.com instead.
+name: Release
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+env:
+  NMAP_VERSION: "7.95"
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the tag matches src/version.py
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $v = python src/version.py
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} but src/version.py says $v" }
+
+      - name: Fetch nmap for bundling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = "nmap-$env:NMAP_VERSION-win32.zip"
+          Invoke-WebRequest -Uri "https://nmap.org/dist/$zip" -OutFile $zip -UseBasicParsing
+          Expand-Archive $zip -DestinationPath nmap-unpacked
+          Copy-Item -Path "nmap-unpacked\nmap-$env:NMAP_VERSION\*" -Destination binaries\windows -Recurse -Force
+          # The VC++ runtime nmap.exe links against is not in the zip (see
+          # binaries\windows\README.txt). Official nmap is 32-bit: SysWOW64.
+          Copy-Item "$env:WINDIR\SysWOW64\msvcp140.dll"     binaries\windows -Force
+          Copy-Item "$env:WINDIR\SysWOW64\vcruntime140.dll" binaries\windows -Force
+          Get-ChildItem binaries\windows | Select-Object -ExpandProperty Name
+
+      - name: Build (build\build_windows.bat)
+        shell: cmd
+        env:
+          NO_PAUSE: "1"
+          SKIP_NPCAP: "1"
+        run: build\build_windows.bat
+
+      - name: Show build log on failure
+        if: failure()
+        shell: pwsh
+        run: if (Test-Path build\build_log.txt) { Get-Content build\build_log.txt -Tail 200 }
+
+      - name: Built files
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -File | Select-Object Name, Length
+          Get-Content dist\SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/CybXNetworkScanner-Setup-*.exe
+            dist/nmap-analyzer.exe
+            dist/nmap-analyzer-gui.exe
+            dist/SHA256SUMS
+
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/CybXNetworkScanner-Setup-*.exe
+            dist/nmap-analyzer.exe
+            dist/nmap-analyzer-gui.exe
+            dist/SHA256SUMS
+          generate_release_notes: true
+          draft: true

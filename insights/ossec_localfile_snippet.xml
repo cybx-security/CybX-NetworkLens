@@ -1,0 +1,47 @@
+<!--
+  Insights collector agent config.
+
+  CybX Insight's collector runs on a Wazuh/OSSEC engine; the paths and service
+  names below are that engine's real names — use them as-is.
+
+  Add ONE of the <localfile> blocks below (the one matching the scanner box's
+  OS) inside the <ossec_config> of the collector agent on the box you run the
+  scanner on. The agent config file lives at:
+
+    Windows: C:\Program Files (x86)\ossec-agent\ossec.conf
+    Linux:   /var/ossec/etc/ossec.conf
+
+  Then restart the collector agent:
+    Windows: Restart-Service WazuhSvc     (PowerShell, as Administrator)
+    Linux:   systemctl restart wazuh-agent
+
+  Point <location> at the NDJSON file the scanner appends to. Set the SAME path
+  in the scanner's config.json under output.insights_events.path so the two
+  agree (the scanner creates the folder if it doesn't exist). In JSON, escape
+  Windows backslashes ("C:\\ProgramData\\...") or use forward slashes
+  ("C:/ProgramData/...") — both work.
+
+    Windows scanner box:
+      "output": {
+        "insights_events": { "enabled": true, "path": "C:\\ProgramData\\CybX\\Insights\\nmap_chat.ndjson" }
+      }
+
+    Linux scanner box:
+      "output": {
+        "insights_events": { "enabled": true, "path": "/var/log/insights/nmap_chat.ndjson" }
+      }
+
+  log_format MUST be `json` — the events are one JSON object per line (NDJSON).
+-->
+
+<!-- Windows scanner box -->
+<localfile>
+  <log_format>json</log_format>
+  <location>C:\ProgramData\CybX\Insights\nmap_chat.ndjson</location>
+</localfile>
+
+<!-- Linux scanner box -->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/insights/nmap_chat.ndjson</location>
+</localfile>
