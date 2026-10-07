@@ -60,6 +60,15 @@ jobs:
           Copy-Item "$env:WINDIR\SysWOW64\vcruntime140.dll" binaries\windows -Force
           Get-ChildItem binaries\windows | Select-Object -ExpandProperty Name
 
+      - name: Install NSIS (builds the installer)
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "choco install nsis failed ($LASTEXITCODE)" }
+          $exe = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $exe)) { throw "makensis.exe not found at $exe" }
+          & $exe /VERSION
+
       - name: Build (build\build_windows.bat)
         shell: cmd
         env:
