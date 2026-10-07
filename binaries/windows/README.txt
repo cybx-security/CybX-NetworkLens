@@ -8,15 +8,18 @@ the self-test, so a build that prints SELF-TEST PASSED has everything below.
 SOURCE 1: The nmap install itself (copy EVERYTHING)
 --------------------------------------------------------------------------
 
-Download portable nmap from https://nmap.org/download.html and copy the ENTIRE
-contents of the extracted folder into this directory — every file and every
-subfolder:
-
-    xcopy /E /I /Y "C:\path\to\extracted\nmap-7.94" "binaries\windows"
-
-Or, if you used the .exe installer instead of the zip:
+Download the Windows installer (nmap-X.XX-setup.exe) from
+https://nmap.org/download.html - there is no portable zip any more - then either
+install it and copy the install directory:
 
     xcopy /E /I /Y "C:\Program Files (x86)\Nmap" "binaries\windows"
+
+or unpack the installer with 7-Zip without running it:
+
+    7z x nmap-X.XX-setup.exe -onmap-unpacked -y
+    rmdir /S /Q nmap-unpacked\zenmap "nmap-unpacked\$PLUGINSDIR"
+    del nmap-unpacked\Uninstall.exe
+    xcopy /E /I /Y nmap-unpacked "binaries\windows"
 
 COPY EVERYTHING. Cherry-picking files will break the scan.
 

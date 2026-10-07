@@ -179,17 +179,18 @@ goto :nmap_ok
 echo.
 echo To bundle nmap for Windows:
 echo.
-echo 1. Download the portable zip from https://nmap.org/download.html
-echo    Look for "nmap-X.XX-win32.zip" or "nmap-X.XX-setup.exe"
+echo 1. Download the Windows installer from https://nmap.org/download.html
+echo    ^(nmap-X.XX-setup.exe - there is no portable zip any more^)
 echo.
-echo 2. Extract or install it, then copy the ENTIRE folder contents -
-echo    every file AND every subfolder - into %BINARIES_DIR%
-echo.
-echo      xcopy /E /I /Y "C:\path\to\nmap-X.XX" "%BINARIES_DIR%"
-echo.
-echo    or, if you used the .exe installer:
+echo 2. Install it, then copy the ENTIRE install folder - every file AND
+echo    every subfolder - into %BINARIES_DIR%
 echo.
 echo      xcopy /E /I /Y "C:\Program Files (x86)\Nmap" "%BINARIES_DIR%"
+echo.
+echo    or unpack the installer with 7-Zip without running it:
+echo.
+echo      7z x nmap-X.XX-setup.exe -onmap-unpacked -y
+echo      xcopy /E /I /Y nmap-unpacked "%BINARIES_DIR%"
 echo.
 echo    Do NOT copy just nmap.exe. It needs nselib\, scripts\,
 echo    nse_main.lua, the nmap-* data files and all .dll files

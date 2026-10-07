@@ -21,7 +21,7 @@ on:
 permissions:
   contents: write
 env:
-  NMAP_VERSION: "7.95"
+  NMAP_VERSION: "7.991"
 jobs:
   windows:
     runs-on: windows-latest
@@ -42,11 +42,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = "nmap-$env:NMAP_VERSION-win32.zip"
-          Invoke-WebRequest -Uri "https://nmap.org/dist/$zip" -OutFile $zip -UseBasicParsing
-          Expand-Archive $zip -DestinationPath nmap-unpacked
-          Copy-Item -Path "nmap-unpacked\nmap-$env:NMAP_VERSION\*" -Destination binaries\windows -Recurse -Force
-          # The VC++ runtime nmap.exe links against is not in the zip (see
+          # nmap.org no longer publishes a portable zip; the setup.exe is an
+          # NSIS installer, which 7-Zip can unpack like an archive.
+          $setup = "nmap-$env:NMAP_VERSION-setup.exe"
+          Invoke-WebRequest -Uri "https://nmap.org/dist/$setup" -OutFile $setup -UseBasicParsing
+          & 7z x $setup -onmap-unpacked -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7z could not unpack $setup (exit $LASTEXITCODE)" }
+          # Not needed for scanning: the Zenmap GUI, the installer's own
+          # plugins (which include Npcap - see the licence note above), and
+          # the uninstaller.
+          Remove-Item -Recurse -Force nmap-unpacked\zenmap, 'nmap-unpacked\$PLUGINSDIR', nmap-unpacked\Uninstall.exe -ErrorAction SilentlyContinue
+          if (-not (Test-Path nmap-unpacked\nmap.exe)) { throw "nmap.exe not found after unpacking $setup" }
+          Copy-Item -Path "nmap-unpacked\*" -Destination binaries\windows -Recurse -Force
+          # The VC++ runtime nmap.exe links against is not in the package (see
           # binaries\windows\README.txt). Official nmap is 32-bit: SysWOW64.
           Copy-Item "$env:WINDIR\SysWOW64\msvcp140.dll"     binaries\windows -Force
           Copy-Item "$env:WINDIR\SysWOW64\vcruntime140.dll" binaries\windows -Force

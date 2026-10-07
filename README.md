@@ -147,24 +147,31 @@ work forever without needing to install anything again.
 Without NSIS the build still produces the portable executables, then stops with
 `INSTALLER NOT BUILT` and tells you to install it.
 
-### Step 2: Download Nmap Portable
+### Step 2: Get the Nmap files
 
-1. Go to https://nmap.org/download.html
-2. Download the **Windows zip** file (e.g., `nmap-7.94-win32.zip`)
-3. Extract the zip file
-4. Copy the **entire contents** of the extracted folder into `binaries\windows\` —
-   every file and every subfolder, not just `nmap.exe`:
+nmap.org no longer offers a portable zip, so either install Nmap or unpack its
+installer:
 
-   ```cmd
-   xcopy /E /I /Y "C:\path\to\extracted\nmap-7.94" "binaries\windows"
-   ```
-
-   If you installed Nmap with the `.exe` installer instead of the zip, copy from
-   its install directory:
+1. Go to https://nmap.org/download.html and download the Windows installer
+   (`nmap-X.XX-setup.exe`)
+2. **Either** run it (you can untick Npcap and Zenmap) and copy the install directory:
 
    ```cmd
    xcopy /E /I /Y "C:\Program Files (x86)\Nmap" "binaries\windows"
    ```
+
+   **or**, with [7-Zip](https://www.7-zip.org/) installed, unpack the installer
+   without running it (this is what the GitHub release build does):
+
+   ```cmd
+   7z x nmap-X.XX-setup.exe -onmap-unpacked -y
+   rmdir /S /Q nmap-unpacked\zenmap "nmap-unpacked\$PLUGINSDIR"
+   del nmap-unpacked\Uninstall.exe
+   xcopy /E /I /Y nmap-unpacked "binaries\windows"
+   ```
+
+   Either way, copy the **entire** folder into `binaries\windows\` — every file and
+   every subfolder, not just `nmap.exe`.
 
 **Copy everything — cherry-picking files will break the scan.** Nmap loads its
 data files from the directory holding `nmap.exe`, and a missing one is a hard
