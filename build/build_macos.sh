@@ -19,6 +19,30 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+# ============================================================
+# Tk version check. Tk older than 8.6.13 has a bug on macOS 13 and
+# later where buttons, radio buttons and menus need two or more
+# clicks to respond - the app looks broken. Anaconda's Python ships
+# 8.6.12. Refuse to build with it; python.org's installer and
+# Homebrew's python-tk both carry a fixed Tk.
+# ============================================================
+TK_VERSION="$(python3 -c 'import tkinter; print(tkinter.Tcl().eval("info patchlevel"))' 2>/dev/null || echo none)"
+case "$TK_VERSION" in
+    none)
+        echo "[!] This python3 has no tkinter. Use python.org's Python or: brew install python-tk@3.12"
+        exit 1 ;;
+    8.6.[0-9]|8.6.1[0-2])
+        echo "[!] This python3 bundles Tk $TK_VERSION. Tk older than 8.6.13 makes buttons need"
+        echo "    repeated clicks on recent macOS, so the app would feel broken."
+        echo "    Build with a Python that has a newer Tk, e.g.:"
+        echo "        brew install python-tk@3.12"
+        echo "        PATH=\"/opt/homebrew/opt/python@3.12/libexec/bin:\$PATH\" ./build/build_macos.sh"
+        echo "    or install Python from https://www.python.org/downloads/ (bundles Tk 8.6.13+)."
+        echo "    (python3 here: $(command -v python3))"
+        exit 1 ;;
+esac
+echo "[*] Tk $TK_VERSION ($(command -v python3))"
+
 # Create virtual environment if needed
 if [ ! -d "$PROJECT_DIR/venv" ]; then
     echo "[*] Creating virtual environment..."
