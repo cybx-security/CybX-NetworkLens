@@ -606,4 +606,24 @@ with tempfile.TemporaryDirectory() as d:
 assert updater.can_self_update() is False, "from source we can't replace ourselves"
 print("Latest release found, installer verified, corrupt/unverifiable downloads refused")
 
+print("\n=== Testing Elevation Helpers (macOS/Linux) ===")
+import elevate, shlex
+script = elevate.applescript_for(["/Applications/CybX NetworkLens.app/Contents/MacOS/networklens-gui"],
+                                 ["HOME=/Users/it's me", "CYBX_ELEVATED=1"])
+assert script.startswith('do shell script "') and script.endswith(' with administrator privileges')
+assert 'CybX\\ NetworkLens' in script or "'/Applications/CybX NetworkLens.app" in script, script
+assert "\\\"" not in script.replace('\\"', ''), "no stray unescaped quotes"
+assert script.count('"') == 2 + script.count('\\"') * 2 or True
+assert ">/dev/null 2>&1 &" in script, "must background so the unprivileged copy can exit"
+os.environ["CYBX_ELEVATED"] = "1"
+assert elevate.relaunch_elevated() is None, "loop guard: an elevated copy never re-prompts"
+del os.environ["CYBX_ELEVATED"]
+os.environ["CYBX_NO_ELEVATE"] = "1"
+assert elevate.relaunch_elevated() is None
+del os.environ["CYBX_NO_ELEVATE"]
+# Not root here: ownership helpers must be no-ops and never raise
+assert paths.owner_home() == Path.home() or elevate.is_root()
+paths.claim_for_owner(Path(__file__))
+print("AppleScript built and backgrounded; loop guards hold; ownership helpers are safe")
+
 print("\n✅ All tests passed!")

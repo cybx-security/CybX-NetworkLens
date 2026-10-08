@@ -34,7 +34,8 @@ Each scan produces two things:
 - **Run it with administrator / root privileges** for the best results:
   - **Windows:** the GUI auto-elevates (approve the prompt); for the CLI, use an
     Administrator command prompt.
-  - **macOS / Linux:** run with `sudo`.
+  - **macOS / Linux:** the app asks for your password when it starts (cancel to run
+    with a limited scan); for the command line use `sudo`.
   - Without privileges the scan still works but quietly drops to a lighter TCP-only
     mode — you'll miss UDP services (SNMP, IPMI), OS detection, and network path info.
 - **First run on Windows** may offer to install Npcap (a packet driver). Approve it

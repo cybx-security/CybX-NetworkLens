@@ -10,15 +10,15 @@ once. Open it anyway:
        about CybX NetworkLens and click "Open Anyway", then confirm.
     (On older macOS, right-click the app > Open works instead.)
 
-Full scans (SYN scan, OS detection, UDP services) need administrator
-rights. macOS does not prompt for them automatically, so for those start the
-app from Terminal:
-    sudo "/Applications/CybX NetworkLens.app/Contents/MacOS/networklens-gui"
-Without sudo it still works, using a TCP-connect scan.
+Each time it starts, the app asks for your password (the normal macOS
+"wants to make changes" dialog): full scans - SYN scan, OS detection, UDP
+services - need administrator rights. Click Cancel to run without them; it
+still works, using a TCP-connect scan.
 
 Command line: the "networklens" file in this window is the CLI. Copy it
 somewhere on your PATH, e.g.:  sudo cp networklens /usr/local/bin/
     sudo networklens --target 192.168.1.0/24
+(the command line does not prompt - use sudo for a full scan.)
 
 Reports are saved under ~/Documents/CybX NetworkLens/output.
 This build matches one CPU type (Apple Silicon or Intel) - see the file name.

@@ -39,9 +39,10 @@ try:
                        NPCAP_DOWNLOAD_URL)
     from diff import diff_reports, format_diff_lines, load_report
     from parser import port_dict_is_open
-    from paths import resolve_output_dir, icon_path
+    from paths import resolve_output_dir, icon_path, claim_for_owner
     from version import __version__
     import updater
+    from elevate import relaunch_elevated
 except ImportError:
     from .scanner import (build_nmap_command, check_privileges, get_nmap_version,
                           nmap_environment_warnings, exit_code_hint, rate_limit_warning,
@@ -57,9 +58,10 @@ except ImportError:
                         NPCAP_DOWNLOAD_URL)
     from .diff import diff_reports, format_diff_lines, load_report
     from .parser import port_dict_is_open
-    from .paths import resolve_output_dir, icon_path
+    from .paths import resolve_output_dir, icon_path, claim_for_owner
     from .version import __version__
     from . import updater
+    from .elevate import relaunch_elevated
 
 
 PROGRESS_RE = re.compile(r"About ([\d.]+)% done", re.IGNORECASE)
@@ -398,7 +400,8 @@ class ScannerGUI:
         if not check_privileges():
             self._log("[!] Not running with root/administrator privileges. "
                       "OS detection, SYN scan, and some vuln scripts will fail.", "warn")
-            self._log("    Restart with sudo (Linux/macOS) or 'Run as Administrator' (Windows).", "warn")
+            self._log("    Restart the app and enter your password when asked (macOS/Linux), "
+                      "or use 'Run as Administrator' (Windows).", "warn")
         elif is_windows() and not is_npcap_installed():
             self._log("[!] Npcap is not installed, so scans fall back to TCP-connect mode: "
                       "no SYN scan, OS detection, or UDP until it is.", "warn")
@@ -1325,6 +1328,7 @@ class ScannerGUI:
                     writer.writerow([r["ip"], r["hostname"], r["mac"], r["vendor"],
                                      r["ports"], r["os"],
                                      meta.get("target", ""), meta.get("timestamp", "")])
+            claim_for_owner(path)
             self._log(f"[+] Inventory CSV saved to {path}", "ok")
         except Exception as e:
             messagebox.showerror("Export failed", str(e))
@@ -1348,6 +1352,7 @@ class ScannerGUI:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.last_output, f, indent=2)
+            claim_for_owner(path)
             self._log(f"[+] Report saved to {path}", "ok")
         except Exception as e:
             messagebox.showerror("Save failed", str(e))
@@ -1394,6 +1399,11 @@ class ScannerGUI:
 
 
 def launch() -> int:
+    # macOS/Linux: offer the system password prompt and hand over to an
+    # elevated copy (Windows does this through the exe's UAC manifest).
+    handed_over = relaunch_elevated()
+    if handed_over is not None:
+        return handed_over
     root = tk.Tk()
     ScannerGUI(root)
     root.mainloop()

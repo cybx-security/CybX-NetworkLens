@@ -90,9 +90,10 @@ Every release on https://github.com/cybx-security/CybX-NetworkLens/releases carr
 | Linux (x86-64 / arm64) | `CybXNetworkLens-<version>-linux-<arch>.tar.gz` | `tar xzf`, `sudo ./install.sh` — needs the distro's `nmap` |
 | all | `SHA256SUMS` | Checksums; what *Check for Updates* verifies against |
 
-Full scans need administrator/root rights. Windows asks automatically; on macOS and
-Linux run with `sudo` (the READ ME in each download has the exact command). Without
-them the scanner still runs, using a TCP-connect scan.
+Full scans need administrator rights, so the app asks for them when it starts: the
+Windows permission prompt, the macOS password dialog, or polkit on Linux. Decline and it
+still runs, using a TCP-connect scan. The command-line tool doesn't prompt — run it with
+`sudo` / from an Administrator prompt.
 
 ---
 
@@ -349,14 +350,15 @@ blocked once: System Settings > Privacy & Security > **Open Anyway**.
 # CLI (needs sudo for SYN scan / OS detection)
 sudo ./dist/networklens --target 192.168.1.0/24
 
-# GUI
+# GUI - asks for your password at launch (administrator rights for full scans)
 open ./dist/networklens-gui.app
-# For full scan capabilities, launch the GUI with sudo from Terminal:
-sudo ./dist/networklens-gui.app/Contents/MacOS/networklens-gui
 ```
 
-macOS uses the built-in libpcap, so there is no Npcap-equivalent step. macOS does not
-support UAC-style auto-elevation — use `sudo` for full scan features.
+macOS uses the built-in libpcap, so there is no Npcap-equivalent step. The GUI shows
+the macOS administrator password dialog when it starts and relaunches itself elevated
+(cancel to run unprivileged); the CLI doesn't prompt, so use `sudo` there. Files written
+while elevated are handed back to your user account, and reports still go to *your*
+Documents folder, not root's.
 
 ---
 
@@ -384,9 +386,9 @@ sudo ./install.sh          # menu entry + `networklens` command; sudo ./uninstal
 sudo networklens --target 192.168.1.0/24
 ```
 
-Root is needed for full scans. The menu entry asks for your password through
-`pkexec` where the desktop allows it, and otherwise runs unprivileged (TCP-connect
-scan).
+Root is needed for full scans. The GUI asks for your password through `pkexec`
+where the desktop allows it (cancel, or a desktop that blocks it, means an unprivileged
+TCP-connect scan); the CLI doesn't prompt, so use `sudo`.
 
 ---
 
@@ -700,7 +702,8 @@ CybXNetworkLens/
 
 - **Windows GUI** — auto-elevates via UAC; just approve the prompt.
 - **Windows CLI** — run from an Administrator Command Prompt / PowerShell.
-- **macOS / Linux** — run with `sudo`.
+- **macOS / Linux GUI** — the app asks for your password when it starts.
+- **macOS / Linux CLI** — run with `sudo`.
 
 **Run it with privileges for the best results.** Without them, the scanner detects
 the lack of privileges and **degrades gracefully** rather than failing: it switches

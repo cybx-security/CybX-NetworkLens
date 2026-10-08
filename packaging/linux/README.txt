@@ -14,10 +14,11 @@ Or run in place, no install:
     sudo ./networklens-gui            # graphical
     sudo ./networklens --target 192.168.1.0/24
 
-Root (sudo) is needed for full scans - SYN scan, OS detection, UDP services.
-Without it the scanner still works, falling back to a TCP-connect scan.
-The menu entry asks for your password via pkexec when it can; on desktops
-where that is blocked (some Wayland setups) it runs unprivileged instead.
+Root is needed for full scans - SYN scan, OS detection, UDP services. The
+graphical app asks for your password itself when it starts (through
+pkexec, on desktops that allow it); click Cancel, or run on a desktop that
+blocks it (some Wayland setups), and it carries on unprivileged with a
+TCP-connect scan. The command line does not prompt - use sudo.
 
 Reports are saved under ~/Documents/CybX NetworkLens/output.
 Settings: ~/.config/cybx-networklens/config.json (created on first edit).

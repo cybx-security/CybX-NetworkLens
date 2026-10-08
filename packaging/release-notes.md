@@ -10,6 +10,6 @@
 
 `SHA256SUMS` lists every file's checksum; the app's **Check for Updates** verifies the Windows installer against it before installing.
 
-Full scans (SYN scan, OS detection, UDP services) need administrator/root rights: the Windows app asks automatically; on macOS/Linux start it with `sudo` (details in the READ ME inside each download). Without them the scanner still runs, using a TCP-connect scan.
+Full scans (SYN scan, OS detection, UDP services) need administrator rights, so the app asks for them when it starts — Windows' permission prompt, the macOS password dialog, or polkit on Linux. Decline and it still runs, using a TCP-connect scan. The command-line tool does not prompt: run it with `sudo` / from an Administrator prompt.
 
 ## Changes

@@ -11,9 +11,23 @@ from pathlib import Path
 try:
     from parser import ScanResult, port_dict_is_open
     from local_analyzer import ScanAnalysis
+    from paths import claim_for_owner
 except ImportError:
     from .parser import ScanResult, port_dict_is_open
     from .local_analyzer import ScanAnalysis
+    from .paths import claim_for_owner
+
+
+def _mkdir_owned(path: Path) -> None:
+    """Create parent folders, handing any new ones to the real user."""
+    missing = []
+    probe = path.parent
+    while not probe.exists() and probe != probe.parent:
+        missing.append(probe)
+        probe = probe.parent
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for folder in missing:
+        claim_for_owner(folder)
 
 
 # Integration tag the CybX Insight dashboard filters on when it pulls network
@@ -122,16 +136,17 @@ def write_json_output(
         Absolute path to written file
     """
     path = Path(output_path)
-    
-    # Create parent directories if needed
-    path.parent.mkdir(parents=True, exist_ok=True)
-    
+    _mkdir_owned(path)
+
     with open(path, 'w', encoding='utf-8') as f:
         if pretty:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
         else:
             json.dump(output_data, f, ensure_ascii=False)
-    
+    # Written as root (sudo / the app's own elevation)? Then it belongs to
+    # the user who ran the scan, not to root.
+    claim_for_owner(path)
+
     return str(path.absolute())
 
 
@@ -357,12 +372,13 @@ def write_ndjson_events(events: List[Dict[str, Any]], output_path: str, append: 
     Returns the absolute path written.
     """
     path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _mkdir_owned(path)
     mode = "a" if append else "w"
     with open(path, mode, encoding="utf-8") as f:
         for evt in events:
             f.write(json.dumps(evt, ensure_ascii=False, separators=(",", ":")))
             f.write("\n")
+    claim_for_owner(path)
     return str(path.absolute())
 
 
