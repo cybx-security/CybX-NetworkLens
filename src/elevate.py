@@ -34,6 +34,22 @@ def _self_command() -> List[str]:
     return [sys.executable, os.path.abspath(sys.argv[0])] + sys.argv[1:]
 
 
+# Variables a PyInstaller one-file build sets so that a child copy of itself
+# reuses the parent's unpacked temp folder. The elevated copy must NOT reuse
+# ours: this unprivileged process exits as soon as the elevated one is up,
+# and on exit the bootloader deletes that folder - under the running app.
+_PYINSTALLER_VARS = ("_MEIPASS2", "_PYI_APPLICATION_HOME_DIR", "_PYI_ARCHIVE_FILE",
+                     "_PYI_PARENT_PROCESS_LEVEL", "_PYI_SPLASH_IPC", "_PYI_LINUX_PROCESS_NAME")
+
+
+def _env_command(env_pairs: List[str]) -> List[str]:
+    """`env` invocation that drops PyInstaller's inherited state and sets ours."""
+    cmd = ["env"]
+    for var in _PYINSTALLER_VARS:
+        cmd += ["-u", var]
+    return cmd + env_pairs
+
+
 def _owner_env() -> List[str]:
     """KEY=VALUE pairs the elevated copy needs to behave like the user's own."""
     pairs = {
@@ -50,16 +66,27 @@ def _owner_env() -> List[str]:
     return [f"{k}={v}" for k, v in pairs.items()]
 
 
-def applescript_for(command: List[str], env_pairs: List[str]) -> str:
+def launch_log_path() -> str:
+    """Where the elevated copy's output goes on macOS (readable in Console.app)."""
+    return os.path.join(os.path.expanduser("~"), "Library", "Logs", "CybX NetworkLens", "elevated-launch.log")
+
+
+def applescript_for(command: List[str], env_pairs: List[str], log_path: Optional[str] = None) -> str:
     """
     The osascript program that runs `command` as administrator.
 
-    The shell line is backgrounded with its output discarded so the dialog
-    closes and this (unprivileged) process can exit straight away instead of
-    sitting behind the elevated window for the whole session.
+    The shell line is backgrounded, with its output sent to a log file, so the
+    dialog closes and this (unprivileged) process can exit straight away
+    instead of sitting behind the elevated window for the whole session. The
+    log is the only trace left if the elevated copy fails to open a window.
     """
-    shell = "env " + " ".join(shlex.quote(p) for p in env_pairs) + " " \
-            + " ".join(shlex.quote(a) for a in command) + " >/dev/null 2>&1 &"
+    run = " ".join(shlex.quote(p) for p in _env_command(env_pairs)) + " " \
+          + " ".join(shlex.quote(a) for a in command)
+    if log_path:
+        shell = ("{ echo \"=== elevated launch $(date)\"; " + run +
+                 "; echo \"=== exited with $?\"; } >>" + shlex.quote(log_path) + " 2>&1 &")
+    else:
+        shell = run + " >/dev/null 2>&1 &"
     escaped = shell.replace("\\", "\\\\").replace('"', '\\"')
     return f'do shell script "{escaped}" with administrator privileges'
 
@@ -81,9 +108,16 @@ def relaunch_elevated() -> Optional[int]:
     env_pairs = _owner_env()
 
     if platform.system() == "Darwin":
+        log_path = launch_log_path()
+        try:
+            # Created now, as the user, so the file root writes lands in a
+            # folder the user owns and can read.
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        except OSError:
+            log_path = None
         try:
             result = subprocess.run(
-                ["osascript", "-e", applescript_for(command, env_pairs)],
+                ["osascript", "-e", applescript_for(command, env_pairs, log_path)],
                 capture_output=True, text=True, timeout=600)
         except (OSError, subprocess.TimeoutExpired):
             return None
@@ -94,7 +128,7 @@ def relaunch_elevated() -> Optional[int]:
         try:
             # pkexec runs the app in the foreground; this process waits so a
             # launcher or terminal sees the app's exit, not an instant return.
-            result = subprocess.run(["pkexec", "env"] + env_pairs + command)
+            result = subprocess.run(["pkexec"] + _env_command(env_pairs) + command)
         except OSError:
             return None
         # 126 = dismissed, 127 = authentication failed: carry on unprivileged.

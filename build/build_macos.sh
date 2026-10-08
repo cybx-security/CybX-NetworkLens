@@ -81,13 +81,18 @@ pyinstaller \
     src/main.py
 
 # ============================================================
-# Build 2: GUI binary (windowed → produces .app bundle)
+# Build 2: GUI .app bundle (windowed, onedir)
+#
+# A folder-style bundle, not --onefile: a one-file app unpacks itself
+# into a temp folder on every launch (slow, and that folder is what
+# the elevated relaunch lost when the launcher exited), and
+# PyInstaller is retiring one-file .app bundles anyway.
 # ============================================================
 echo ""
-echo "[*] Building GUI executable (networklens-gui.app)..."
+echo "[*] Building GUI app bundle (networklens-gui.app)..."
 pyinstaller \
     --name networklens-gui \
-    --onefile \
+    --onedir \
     --windowed \
     --icon packaging/icon/icon.icns \
     --noconfirm \

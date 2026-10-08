@@ -1398,13 +1398,56 @@ class ScannerGUI:
             messagebox.showerror("Couldn't open folder", str(e))
 
 
+def _write_tk_diagnostics(error: Exception) -> None:
+    """
+    When Tk itself fails to start, say why in terms Tcl can explain.
+
+    A TclError from tk.Tk() carries only the last message; the interpreter
+    that knows the stack is already gone. Build a Tcl-only interpreter,
+    record where it thinks its library is, retry loading Tk, and print
+    Tcl's errorInfo. Goes to stderr, which the elevated launcher captures
+    in its log file.
+    """
+    import _tkinter
+    lines = [f"[!] Tk failed to start: {error}"]
+    try:
+        interp = _tkinter.create(None, "diag", "Diag", False, True, False, False, None)
+        for cmd in ("info library", "info nameofexecutable", "set tcl_interactive",
+                    "set auto_path", "set env(TCL_LIBRARY)", "set env(TK_LIBRARY)",
+                    "set tcl_platform(user)", "pwd"):
+            try:
+                lines.append(f"    {cmd} -> {interp.eval(cmd)}")
+            except Exception as x:
+                lines.append(f"    {cmd} !! {x}")
+        try:
+            interp.loadtk()
+            lines.append("    loadtk succeeded on a second try")
+        except Exception as x:
+            lines.append(f"    loadtk failed: {x}")
+            try:
+                lines.append("    errorInfo:\n" + interp.eval("set errorInfo"))
+            except Exception as y:
+                lines.append(f"    (no errorInfo: {y})")
+    except Exception as x:
+        lines.append(f"    diagnostic interpreter failed too: {x}")
+    try:
+        sys.stderr.write("\n".join(lines) + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
 def launch() -> int:
     # macOS/Linux: offer the system password prompt and hand over to an
     # elevated copy (Windows does this through the exe's UAC manifest).
     handed_over = relaunch_elevated()
     if handed_over is not None:
         return handed_over
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        _write_tk_diagnostics(e)
+        raise
     ScannerGUI(root)
     root.mainloop()
     return 0
