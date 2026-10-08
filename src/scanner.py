@@ -402,7 +402,7 @@ def build_nmap_command(
         List of command arguments for subprocess.
     """
     if privileged is None:
-        privileged = check_privileges()
+        privileged = can_use_raw_sockets()
 
     nmap_path, datadir, missing = resolve_nmap()
     cmd = [nmap_path]
@@ -611,6 +611,27 @@ def run_scan(
     except Exception as e:
         print(f"[!] Error running nmap: {e}")
         raise
+
+
+def can_use_raw_sockets() -> bool:
+    """
+    Whether a SYN/UDP/OS-detection scan can actually run here.
+
+    Root/Administrator is necessary but, on Windows, not sufficient: raw
+    packets go through the Npcap driver, and without it nmap refuses -sS
+    outright ("requires root privileges") even from an elevated prompt. So an
+    admin machine with no Npcap is treated as unprivileged and gets the
+    TCP-connect fallback instead of an aborted scan.
+    """
+    if not check_privileges():
+        return False
+    if platform.system().lower() == 'windows':
+        try:
+            from npcap import is_npcap_installed
+        except ImportError:
+            from .npcap import is_npcap_installed
+        return is_npcap_installed()
+    return True
 
 
 def check_privileges() -> bool:

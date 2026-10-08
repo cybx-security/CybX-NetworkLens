@@ -88,7 +88,13 @@ def run_self_test(log: Callable[[str], None] = print) -> Tuple[bool, List[str]]:
         msg = ("Using the machine's own nmap install, not a bundled copy. This "
                "will not scan on a machine without nmap installed. Copy the "
                "entire nmap directory into binaries/<os>/ and rebuild.")
-        if frozen:
+        if frozen and os.environ.get("ALLOW_SYSTEM_NMAP"):
+            # Linux builds ship without nmap on purpose (the distro package
+            # is one command away and binary-compatible with the machine),
+            # so there this is expected rather than a broken bundle.
+            log(f"[!] {msg}")
+            log("    (allowed: ALLOW_SYSTEM_NMAP is set - this build relies on the system nmap)")
+        elif frozen:
             failures.append(msg)
         else:
             log(f"[!] {msg}")

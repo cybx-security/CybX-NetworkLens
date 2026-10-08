@@ -35,7 +35,8 @@ try:
                         create_nmap_chat_events, write_ndjson_events,
                         write_json_output)
     from main import load_config
-    from npcap import is_windows, is_npcap_installed, find_bundled_installer, install_npcap
+    from npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
+                       NPCAP_DOWNLOAD_URL)
     from diff import diff_reports, format_diff_lines, load_report
     from parser import port_dict_is_open
     from paths import resolve_output_dir, icon_path
@@ -52,7 +53,8 @@ except ImportError:
                          create_nmap_chat_events, write_ndjson_events,
                          write_json_output)
     from .main import load_config
-    from .npcap import is_windows, is_npcap_installed, find_bundled_installer, install_npcap
+    from .npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
+                        NPCAP_DOWNLOAD_URL)
     from .diff import diff_reports, format_diff_lines, load_report
     from .parser import port_dict_is_open
     from .paths import resolve_output_dir, icon_path
@@ -397,6 +399,9 @@ class ScannerGUI:
             self._log("[!] Not running with root/administrator privileges. "
                       "OS detection, SYN scan, and some vuln scripts will fail.", "warn")
             self._log("    Restart with sudo (Linux/macOS) or 'Run as Administrator' (Windows).", "warn")
+        elif is_windows() and not is_npcap_installed():
+            self._log("[!] Npcap is not installed, so scans fall back to TCP-connect mode: "
+                      "no SYN scan, OS detection, or UDP until it is.", "warn")
 
     def _check_npcap(self) -> None:
         """On Windows, prompt the user to install Npcap if it's missing."""
@@ -410,7 +415,15 @@ class ScannerGUI:
 
         installer = find_bundled_installer()
         if installer is None:
-            self._log("    No bundled installer found. Download manually from https://npcap.com", "warn")
+            self._log(f"    Get it from {NPCAP_DOWNLOAD_URL} - until then scans run in the "
+                      "slower TCP-connect mode without OS detection or UDP.", "warn")
+            if messagebox.askyesno(
+                    "Install Npcap?",
+                    "Npcap (a free packet-capture driver) is needed for full scans: SYN scan, "
+                    "OS detection, and UDP services like SNMP.\n\n"
+                    "Open the Npcap download page in your browser? Run the installer it "
+                    "gives you, then restart the scanner."):
+                webbrowser.open(NPCAP_DOWNLOAD_URL)
             return
 
         proceed = messagebox.askyesno(

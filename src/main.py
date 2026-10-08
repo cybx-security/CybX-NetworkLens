@@ -28,7 +28,8 @@ try:
     from local_analyzer import analyze_locally
     from output import (create_insights_report, write_json_output, generate_filename,
                         print_summary, create_nmap_chat_events, write_ndjson_events)
-    from npcap import is_windows, is_npcap_installed, find_bundled_installer, install_npcap
+    from npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
+                       NPCAP_DOWNLOAD_URL)
     from paths import config_candidates, resolve_output_dir
     from version import __version__
 except ImportError:
@@ -39,7 +40,8 @@ except ImportError:
     from .local_analyzer import analyze_locally
     from .output import (create_insights_report, write_json_output, generate_filename,
                          print_summary, create_nmap_chat_events, write_ndjson_events)
-    from .npcap import is_windows, is_npcap_installed, find_bundled_installer, install_npcap
+    from .npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
+                        NPCAP_DOWNLOAD_URL)
     from .paths import config_candidates, resolve_output_dir
     from .version import __version__
 
@@ -371,7 +373,8 @@ def main() -> int:
                 if not ok:
                     print("[!] Install Npcap manually from https://npcap.com")
         elif installer is None:
-            print("[!] No bundled installer found. Install manually from https://npcap.com")
+            print(f"[!] Install it from {NPCAP_DOWNLOAD_URL} - until then this scan runs in "
+                  "TCP-connect mode (no SYN scan, OS detection, or UDP).")
         else:
             print("[!] Non-interactive shell. Install Npcap manually from https://npcap.com")
         print()

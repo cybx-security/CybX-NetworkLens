@@ -1,0 +1,24 @@
+CybX NetworkLens for macOS
+==========================
+
+Install: drag "CybX NetworkLens" onto the Applications folder in this window.
+
+First launch - the app is not yet notarized with Apple, so macOS blocks it
+once. Open it anyway:
+    1. Double-click the app; macOS says it "cannot be opened".
+    2. Open System Settings > Privacy & Security, scroll down to the message
+       about CybX NetworkLens and click "Open Anyway", then confirm.
+    (On older macOS, right-click the app > Open works instead.)
+
+Full scans (SYN scan, OS detection, UDP services) need administrator
+rights. macOS does not prompt for them automatically, so for those start the
+app from Terminal:
+    sudo "/Applications/CybX NetworkLens.app/Contents/MacOS/networklens-gui"
+Without sudo it still works, using a TCP-connect scan.
+
+Command line: the "networklens" file in this window is the CLI. Copy it
+somewhere on your PATH, e.g.:  sudo cp networklens /usr/local/bin/
+    sudo networklens --target 192.168.1.0/24
+
+Reports are saved under ~/Documents/CybX NetworkLens/output.
+This build matches one CPU type (Apple Silicon or Intel) - see the file name.

@@ -56,13 +56,6 @@ SetCompressor /SOLID lzma
   !error "nmap.exe is not in SRC\_internal\binaries\windows - the build has no bundled nmap"
 !endif
 
-; The Npcap installer is bundled when the build machine had one in
-; installers\windows\. Without it the component simply isn't offered and the
-; app points the user at npcap.com on first launch.
-!if /FileExists "${SRC}\_internal\installers\windows\npcap-*.exe"
-  !define HAVE_NPCAP
-!endif
-
 !define APPNAME "CybX NetworkLens"
 !define GUI_EXE "CybXNetworkLens.exe"
 !define CLI_EXE "networklens.exe"
@@ -87,9 +80,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "LegalCopyright" "Copyright (c) CybX"
 
 Var Purge
-!ifdef HAVE_NPCAP
-  Var NpcapPresent
-!endif
+Var NpcapPresent
 
 !define MUI_ICON "${ICON}"
 !define MUI_UNICON "${ICON}"
@@ -99,7 +90,7 @@ Var Purge
 !define MUI_UNFINISHPAGE_NOAUTOCLOSE
 
 !define MUI_WELCOMEPAGE_TITLE "Welcome to ${APPNAME} ${VERSION}"
-!define MUI_WELCOMEPAGE_TEXT "${APPNAME} finds the devices on a network, lists their open ports and services, and flags the risky ones.$\r$\n$\r$\nSetup will:$\r$\n$\r$\n   -  install the scanner for everyone who uses this computer$\r$\n   -  add it to the Start Menu and the Desktop$\r$\n   -  offer to install the Npcap packet driver if it is missing$\r$\n$\r$\nScanning runs entirely on this computer. Only scan networks you are authorized to scan.$\r$\n$\r$\nClick Next to continue."
+!define MUI_WELCOMEPAGE_TEXT "${APPNAME} finds the devices on a network, lists their open ports and services, and flags the risky ones.$\r$\n$\r$\nSetup will:$\r$\n$\r$\n   -  install the scanner for everyone who uses this computer$\r$\n   -  add it to the Start Menu and the Desktop$\r$\n   -  install the Npcap packet driver if it is missing (from npcap.com)$\r$\n$\r$\nScanning runs entirely on this computer. Only scan networks you are authorized to scan.$\r$\n$\r$\nClick Next to continue."
 !insertmacro MUI_PAGE_WELCOME
 
 !define MUI_COMPONENTSPAGE_SMALLDESC
@@ -244,30 +235,44 @@ Section "Desktop shortcut" SecDesktop
   DetailPrint "Desktop shortcut: ${APPNAME}"
 SectionEnd
 
-!ifdef HAVE_NPCAP
+; Npcap (the packet-capture driver nmap needs for SYN scans, OS detection and
+; UDP). Either bundled at build time (installers\windows\npcap-*.exe) or, in a
+; public build where the licence forbids bundling it, fetched from npcap.com
+; at install time so the user still gets it in one go. Its free installer has
+; no silent mode: the user clicks through Npcap's own window.
+!define NPCAP_VERSION "1.88"
+!define NPCAP_URL "https://npcap.com/dist/npcap-${NPCAP_VERSION}.exe"
+
 Section "Npcap packet driver (needed for full scans)" SecNpcap
-  ; Npcap's free installer has no silent mode, so a silent Setup leaves it
-  ; alone; the app offers it again on first launch.
   ${If} ${Silent}
     DetailPrint "Npcap: skipped (silent install). The scanner offers it on first launch."
     Return
   ${EndIf}
+  StrCpy $2 ""
   FindFirst $0 $1 "$INSTDIR\_internal\installers\windows\npcap-*.exe"
   FindClose $0
-  ${If} $1 == ""
-    DetailPrint "Npcap: no bundled installer found - get it from https://npcap.com"
-    Return
+  ${If} $1 != ""
+    StrCpy $2 "$INSTDIR\_internal\installers\windows\$1"
+  ${Else}
+    DetailPrint "Downloading Npcap ${NPCAP_VERSION} from npcap.com..."
+    StrCpy $2 "$TEMP\npcap-${NPCAP_VERSION}.exe"
+    Delete "$2"
+    nsExec::ExecToLog `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${NPCAP_URL}' -OutFile '$2' -UseBasicParsing"`
+    Pop $0
+    ${IfNot} ${FileExists} "$2"
+      DetailPrint "Npcap could not be downloaded (code $0). Get it from https://npcap.com - the scanner offers it again on first launch."
+      Return
+    ${EndIf}
   ${EndIf}
-  DetailPrint "Opening Npcap setup ($1) - click through its window to continue..."
+  DetailPrint "Opening Npcap setup - click through its window to continue..."
   ClearErrors
-  ExecWait '"$INSTDIR\_internal\installers\windows\$1" /winpcap_mode=yes' $0
+  ExecWait '"$2" /winpcap_mode=yes' $0
   ${If} ${Errors}
     DetailPrint "Npcap setup could not be started. The scanner offers it again on first launch."
   ${Else}
     DetailPrint "Npcap setup finished (code $0)."
   ${EndIf}
 SectionEnd
-!endif
 
 ; /RELAUNCH: reopen the app once the install has finished. The self-updater
 ; passes it with /S, so the user sees the scanner close and come back on
@@ -301,7 +306,6 @@ Function .onInit
     !insertmacro UnselectSection ${SecDesktop}
   ${EndIf}
 
-!ifdef HAVE_NPCAP
   ; Already installed (by this app, Wireshark, nmap...): don't offer it again.
   ; Setup is a 32-bit program, so look at the real System32, not the
   ; redirected one.
@@ -317,15 +321,13 @@ Function .onInit
     !insertmacro UnselectSection ${SecNpcap}
     SectionSetText ${SecNpcap} ""
   ${EndIf}
-!endif
 FunctionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "The scanner, its Start Menu entry, and its uninstaller."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Puts a ${APPNAME} icon on the Desktop for everyone who uses this computer."
-!ifdef HAVE_NPCAP
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecNpcap} "Opens the Npcap setup window. Without Npcap, scans are slower and cannot detect operating systems or UDP services."
-!endif
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecNpcap} "Opens the Npcap setup window (downloaded from npcap.com if not bundled). Without Npcap, scans are slower and cannot detect operating systems or UDP services."
+
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Function un.onInit

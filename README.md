@@ -78,6 +78,24 @@ scripts can take a while. Tune it per engagement:
 
 ---
 
+## Downloads
+
+Every release on https://github.com/cybx-security/CybX-NetworkLens/releases carries:
+
+| Platform | File | Install |
+|---|---|---|
+| Windows 10/11 | `CybXNetworkLens-Setup-<version>.exe` | Run it — see [Installing on Windows](#installing-on-windows-for-users) |
+| Windows, portable | `networklens-gui.exe`, `networklens.exe` | No install; run from anywhere |
+| macOS (Apple Silicon / Intel) | `CybXNetworkLens-<version>-macos-arm64.dmg` / `-x86_64.dmg` | Open, drag to Applications. First launch: System Settings › Privacy & Security › **Open Anyway** (not notarized yet) |
+| Linux (x86-64 / arm64) | `CybXNetworkLens-<version>-linux-<arch>.tar.gz` | `tar xzf`, `sudo ./install.sh` — needs the distro's `nmap` |
+| all | `SHA256SUMS` | Checksums; what *Check for Updates* verifies against |
+
+Full scans need administrator/root rights. Windows asks automatically; on macOS and
+Linux run with `sudo` (the READ ME in each download has the exact command). Without
+them the scanner still runs, using a TCP-connect scan.
+
+---
+
 ## What gets built
 
 On Windows, `build\build_windows.bat` produces all of these in `dist\`:
@@ -89,8 +107,11 @@ On Windows, `build\build_windows.bat` produces all of these in `dist\`:
 | `networklens.exe` | Portable CLI | Single file. Run from an Administrator prompt. |
 | `CybXNetworkLens\` | Installed-app folder | What the installer packages. Not for handing out directly. |
 
-The macOS and Linux build scripts produce the two portable executables only
-(`networklens` and `networklens-gui`); there is no installer for those platforms.
+`build/build_macos.sh` produces the CLI, the `.app`, and a drag-to-install
+`CybXNetworkLens-<version>-macos-<arch>.dmg`. `build/build_linux.sh` produces the two
+executables and a `CybXNetworkLens-<version>-linux-<arch>.tar.gz` with `install.sh` /
+`uninstall.sh` (application-menu entry, `networklens` on the PATH). The release
+workflow builds all of these on GitHub's runners.
 
 ---
 
@@ -100,7 +121,8 @@ The macOS and Linux build scripts produce the two portable executables only
    permission prompt.
 2. Click through the wizard. It installs the scanner for everyone on the computer,
    adds a **Desktop icon** and a **Start Menu** entry, and — if Npcap isn't already on
-   the machine — opens Npcap's own setup window (click Next / Install in it).
+   the machine — downloads it from npcap.com and opens Npcap's own setup window
+   (click Next / Install in it).
 3. Launch **CybX NetworkLens** from the Desktop icon. Windows asks for permission
    each time it starts, because scanning needs administrator rights.
 
@@ -315,9 +337,11 @@ without Homebrew. The bundler copies all of it, rewrites the library paths to lo
 from the bundle, re-signs it, and refuses to leave an incomplete bundle. To refresh
 after upgrading nmap, empty `binaries/macos/` (keep `README.txt`) and rebuild.
 
-The result matches the CPU of the Mac you build on — a build from an Apple Silicon Mac
-does not run on an Intel Mac. The app is unsigned, so on another Mac the first launch
-needs right-click > Open (or allowing it under System Settings > Privacy & Security).
+The build also produces `dist/CybXNetworkLens-<version>-macos-<arch>.dmg` (the app, an
+Applications shortcut, the CLI and a READ ME). The result matches the CPU of the Mac you
+build on — a build from an Apple Silicon Mac does not run on an Intel Mac; the release
+workflow builds both. The app is not notarized, so on another Mac the first launch is
+blocked once: System Settings > Privacy & Security > **Open Anyway**.
 
 ### Run
 
@@ -338,31 +362,31 @@ support UAC-style auto-elevation — use `sudo` for full scan features.
 
 ## Linux Setup
 
-### Quick Build
 ```bash
-# Install dependencies
-pip3 install -r requirements.txt
-
-# Copy nmap binary and data files
-cp $(which nmap) binaries/linux/
-cp -r /usr/share/nmap/* binaries/linux/
-
-# Build (produces both CLI and GUI binaries)
-chmod +x build/build_linux.sh
+sudo apt install nmap python3 python3-venv python3-tk   # Debian/Ubuntu
+chmod +x build/*.sh
 ./build/build_linux.sh
 ```
 
-### Run
-```bash
-# CLI
-sudo ./dist/networklens --target 192.168.1.0/24
+Produces `dist/networklens`, `dist/networklens-gui` and
+`dist/CybXNetworkLens-<version>-linux-<arch>.tar.gz`. nmap is **not** bundled on Linux:
+the distro package is one command away, matches the machine's libraries, and gets
+security updates with the rest of the system, so the app uses the system `nmap`
+(`install.sh` checks for it). Build on the oldest distro you need to support — a
+PyInstaller build does not run on an older glibc than it was built on.
 
-# GUI
-sudo ./dist/networklens-gui
+### Run / install
+
+```bash
+tar xzf CybXNetworkLens-<version>-linux-x86_64.tar.gz
+cd CybXNetworkLens-<version>-linux-x86_64
+sudo ./install.sh          # menu entry + `networklens` command; sudo ./uninstall.sh removes it
+sudo networklens --target 192.168.1.0/24
 ```
 
-Linux uses the system libpcap. Linux does not auto-elevate — run with `sudo`, or wire up
-a `.desktop` launcher with `pkexec` if you want a graphical elevation prompt.
+Root is needed for full scans. The menu entry asks for your password through
+`pkexec` where the desktop allows it, and otherwise runs unprivileged (TCP-connect
+scan).
 
 ---
 
@@ -377,7 +401,8 @@ To make this painless:
 - **At build time**, `build_windows.bat` downloads the Npcap installer into
   `installers\windows\` and bundles it into both executables.
 - **During install**, the setup wizard offers Npcap as a component when the machine
-  doesn't have it, and opens Npcap's setup window.
+  doesn't have it: it runs the bundled copy if there is one, otherwise downloads the
+  installer from npcap.com, and opens Npcap's setup window.
 - **At first launch on a new machine** (portable builds, or if it was skipped during
   install), the scanner detects that Npcap is missing and offers to install it:
   - **GUI** — a dialog appears; click **Yes**, then click through the Npcap setup
@@ -438,8 +463,9 @@ A release **must** carry `SHA256SUMS` next to the installer: the updater refuses
 install anything it can't verify. Releases are unsigned, so integrity rests on HTTPS
 plus those checksums — anyone who can publish a release to the repository can update
 every customer machine. Guard that access accordingly. The CI build does not bundle
-Npcap (its free licence doesn't allow redistribution); a release built locally with
-`build\build_windows.bat` does, so prefer the CI builds for anything public.
+Npcap (its free licence doesn't allow redistribution) — the installer fetches it from
+npcap.com during setup instead. A release built locally with `build\build_windows.bat`
+does bundle it, so prefer the CI builds for anything public.
 
 ---
 
@@ -703,6 +729,7 @@ nothing — but you'll miss SNMP/IPMI/TFTP (UDP), OS fingerprints, and topology.
 | GUI says "Npcap not installed" with no installer | Build-time download failed; add `npcap-X.XX.exe` to `installers\windows\` and rebuild |
 | Events not showing in Insights | Confirm the Insights collector tails the `.ndjson` path and the rules from `insights/` are installed — see [`insights/README.md`](insights/README.md) |
 | Build fails | Make sure Python and pip are on PATH; run `pip install -r requirements.txt` |
+| Windows scan says "requires root privileges" or runs TCP-connect only | Npcap isn't installed — the app and installer point you to npcap.com |
 | Build ends with `INSTALLER NOT BUILT` | NSIS isn't installed — `winget install NSIS.NSIS`, then re-run the build |
 | Windows SmartScreen / antivirus blocks the installer or .exe | Unsigned PyInstaller binaries often trip heuristics on first run — **More info > Run anyway**, or whitelist it |
 | Slow startup of the portable GUI | A single-file exe unpacks to temp on each launch. The installed version doesn't — use the installer |

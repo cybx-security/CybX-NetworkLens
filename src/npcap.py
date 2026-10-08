@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 
+# Where users get Npcap when no installer is bundled (the free licence does
+# not allow redistributing it in a public download).
+NPCAP_DOWNLOAD_URL = "https://npcap.com/#download"
+
 WPCAP_PATHS = [
     Path(r"C:\Windows\System32\wpcap.dll"),
     Path(r"C:\Windows\System32\Npcap\wpcap.dll"),

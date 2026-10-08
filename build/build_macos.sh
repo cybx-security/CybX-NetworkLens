@@ -116,11 +116,29 @@ if ! (cd / && "$BUILD_DIR/networklens" --self-test); then
     exit 1
 fi
 
+# ============================================================
+# Package: a DMG with the app, an Applications shortcut, the CLI
+# and a READ ME - the usual drag-to-install download.
+# ============================================================
+VERSION="$(python3 "$PROJECT_DIR/src/version.py")"
+ARCH="$(uname -m)"
+DMG="$BUILD_DIR/CybXNetworkLens-$VERSION-macos-$ARCH.dmg"
+STAGE="$(mktemp -d)"
+cp -R "$BUILD_DIR/networklens-gui.app" "$STAGE/CybX NetworkLens.app"
+cp "$BUILD_DIR/networklens" "$STAGE/networklens"
+cp "$PROJECT_DIR/packaging/macos/READ ME FIRST.txt" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG"
+hdiutil create -volname "CybX NetworkLens $VERSION" -srcfolder "$STAGE" -ov -format UDZO -quiet "$DMG"
+rm -rf "$STAGE"
+echo "[+] Disk image: $DMG"
+
 echo ""
 echo "=========================================="
 echo "  Build Complete!"
 echo "=========================================="
 echo ""
+echo "Disk image (give this to users): $DMG"
 echo "CLI executable: $BUILD_DIR/networklens"
 echo "GUI app bundle: $BUILD_DIR/networklens-gui.app"
 echo ""

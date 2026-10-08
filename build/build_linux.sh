@@ -36,45 +36,18 @@ pip install -r "$PROJECT_DIR/requirements.txt"
 # Create binaries directory
 mkdir -p "$BINARIES_DIR"
 
-# Check for nmap binary
-if [ ! -f "$BINARIES_DIR/nmap" ]; then
-    echo "[*] Nmap binary not found in $BINARIES_DIR"
-    echo ""
-    echo "To bundle nmap, you have several options:"
-    echo ""
-    echo "Option 1: Copy from system installation"
-    echo "  If you have nmap installed:"
-    echo "    cp \$(which nmap) $BINARIES_DIR/"
-    echo ""
-    echo "Option 2: Download static build"
-    echo "  1. Download a static nmap build"
-    echo "  2. Copy to $BINARIES_DIR/"
-    echo ""
-    echo "Option 3: Use system nmap (no bundling)"
-    echo "  The app will fall back to system nmap if bundled binary is not found."
-    echo "  Install with: sudo apt install nmap"
-    echo ""
-    
-    # Try to copy from system if available
-    if command -v nmap &> /dev/null; then
-        NMAP_PATH=$(which nmap)
-        echo "[*] Found nmap at $NMAP_PATH"
-        read -p "Copy to binaries directory? (y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            cp "$NMAP_PATH" "$BINARIES_DIR/"
-            chmod +x "$BINARIES_DIR/nmap"
-            echo "[+] Copied nmap to $BINARIES_DIR/"
-            
-            # Copy nmap data files
-            NMAP_DATA_DIR="/usr/share/nmap"
-            if [ -d "$NMAP_DATA_DIR" ]; then
-                echo "[*] Copying nmap data files..."
-                cp -r "$NMAP_DATA_DIR"/* "$BINARIES_DIR/" 2>/dev/null || true
-            fi
-        fi
-    fi
+# ============================================================
+# nmap: NOT bundled on Linux. The distro package is one command
+# away, matches the machine's libraries, and gets security updates
+# with the rest of the system - a copy taken from this build box
+# would only run where the same shared libraries exist. The build
+# therefore relies on the system nmap and tells the self-test so.
+# ============================================================
+if ! command -v nmap &> /dev/null; then
+    echo "[!] nmap is required to self-test the build:  sudo apt install nmap"
+    exit 1
 fi
+export ALLOW_SYSTEM_NMAP=1
 
 cd "$PROJECT_DIR"
 
@@ -124,7 +97,7 @@ echo ""
 # The file-presence checks above only catch problems someone thought to list.
 # Running the binary we just built catches the rest: if it can scan localhost
 # end to end, the bundle is good.
-if ! "$BUILD_DIR/networklens" --self-test; then
+if ! (cd / && "$BUILD_DIR/networklens" --self-test); then
     echo ""
     echo "[!] The build completed but the executable cannot scan."
     echo "[!] Read the self-test output above - it names what is missing."
@@ -132,11 +105,30 @@ if ! "$BUILD_DIR/networklens" --self-test; then
     exit 1
 fi
 
+# ============================================================
+# Package: tar.gz with both executables, the icon, a READ ME and
+# install/uninstall scripts (menu entry + `networklens` on PATH).
+# ============================================================
+VERSION="$(python3 "$PROJECT_DIR/src/version.py")"
+ARCH="$(uname -m)"
+NAME="CybXNetworkLens-$VERSION-linux-$ARCH"
+STAGE="$(mktemp -d)"
+mkdir -p "$STAGE/$NAME"
+cp "$BUILD_DIR/networklens" "$BUILD_DIR/networklens-gui" "$STAGE/$NAME/"
+cp "$PROJECT_DIR/packaging/linux/install.sh" "$PROJECT_DIR/packaging/linux/uninstall.sh" \
+   "$PROJECT_DIR/packaging/linux/README.txt" "$STAGE/$NAME/"
+cp "$PROJECT_DIR/packaging/icon/icon.png" "$STAGE/$NAME/icon.png"
+chmod 755 "$STAGE/$NAME"/networklens "$STAGE/$NAME"/networklens-gui "$STAGE/$NAME"/*.sh
+tar -czf "$BUILD_DIR/$NAME.tar.gz" -C "$STAGE" "$NAME"
+rm -rf "$STAGE"
+echo "[+] Package: $BUILD_DIR/$NAME.tar.gz"
+
 echo ""
 echo "=========================================="
 echo "  Build Complete!"
 echo "=========================================="
 echo ""
+echo "Package (give this to users): $BUILD_DIR/$NAME.tar.gz"
 echo "CLI executable: $BUILD_DIR/networklens"
 echo "GUI executable: $BUILD_DIR/networklens-gui"
 echo ""

@@ -1,18 +1,16 @@
-# Builds the Windows installer on a GitHub-hosted Windows runner and, for a
-# version tag, attaches it to a DRAFT release. Publishing the draft is a
-# deliberate click: the moment it is public, every installed copy's
-# "Check for Updates" offers it (src/updater.py reads /releases/latest).
+# Builds every download on GitHub-hosted runners and, for a version tag,
+# attaches them to a DRAFT release. Publishing the draft is a deliberate
+# click: the moment it is public, every installed copy's "Check for Updates"
+# offers it (src/updater.py reads /releases/latest).
 #
 #   git tag v1.2.0 && git push origin v1.2.0      -> build + draft release
-#   Actions > Release > Run workflow              -> build only (artifact)
+#   Actions > Release > Run workflow              -> build only (artifacts)
 #
-# The build itself is build\build_windows.bat, unchanged: this workflow only
-# fetches what a developer would copy into binaries\windows by hand (the nmap
-# zip and the VC++ runtime DLLs - see binaries\windows\README.txt).
-#
-# Npcap is NOT bundled here (SKIP_NPCAP): the free Npcap licence does not
-# allow redistribution, and a public release is exactly that. The installer
-# and the app point users at npcap.com instead.
+# Each platform job runs that platform's build script unchanged; this file
+# only fetches what a developer would copy into binaries\windows by hand and
+# gathers the results. Npcap is NOT bundled here (SKIP_NPCAP): the free Npcap
+# licence does not allow redistribution, and a public release is exactly
+# that. The installer downloads it from npcap.com during setup instead.
 name: Release
 on:
   workflow_dispatch:
@@ -81,28 +79,90 @@ jobs:
         shell: pwsh
         run: if (Test-Path build\build_log.txt) { Get-Content build\build_log.txt -Tail 200 }
 
-      - name: Built files
-        shell: pwsh
-        run: |
-          Get-ChildItem dist -File | Select-Object Name, Length
-          Get-Content dist\SHA256SUMS
-
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-build
+          name: windows
           path: |
             dist/CybXNetworkLens-Setup-*.exe
             dist/networklens.exe
             dist/networklens-gui.exe
-            dist/SHA256SUMS
 
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest       # Apple Silicon
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: brew install nmap
+      - name: Build (build/build_macos.sh)
+        run: |
+          chmod +x build/*.sh
+          ./build/build_macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist/CybXNetworkLens-*-macos-*.dmg
+
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported Ubuntu, so the result runs on anything with
+          # that glibc or newer (a PyInstaller build never runs on an older
+          # glibc than it was built on).
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      # The distro Python: it comes with tkinter and matches the system libs.
+      - run: sudo apt-get update && sudo apt-get install -y nmap python3 python3-venv python3-tk python3-pip
+      - name: Build (build/build_linux.sh)
+        run: |
+          chmod +x build/*.sh
+          ./build/build_linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/CybXNetworkLens-*-linux-*.tar.gz
+
+  # One job gathers everything: a single SHA256SUMS covering every file (the
+  # updater verifies the Windows installer against it) and one draft release
+  # instead of several jobs racing to create it.
+  release:
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: artifacts/
       - if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/CybXNetworkLens-Setup-*.exe
-            dist/networklens.exe
-            dist/networklens-gui.exe
-            dist/SHA256SUMS
+          files: artifacts/*
+          body_path: packaging/release-notes.md
           generate_release_notes: true
           draft: true
