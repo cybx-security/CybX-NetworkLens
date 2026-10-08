@@ -460,6 +460,34 @@ def nmap_run_error(xml_content: str) -> Optional[str]:
     return None
 
 
+def salvage_partial_xml(xml_content: str) -> Optional[str]:
+    """
+    Close off the XML of a scan that was stopped mid-run so the hosts it had
+    finished can still be parsed.
+
+    nmap writes each host as it completes, so a killed scan leaves a document
+    that is complete up to the last </host> and then cut off. Everything after
+    that point is dropped and the root element closed. Returns None when no
+    host was finished (nothing to salvage) or the input already parses.
+    """
+    if not xml_content:
+        return None
+    try:
+        ET.fromstring(xml_content)
+        return None  # complete already
+    except ET.ParseError:
+        pass
+    cut = xml_content.rfind("</host>")
+    if cut < 0:
+        return None
+    candidate = xml_content[:cut + len("</host>")] + "\n</nmaprun>\n"
+    try:
+        ET.fromstring(candidate)
+    except ET.ParseError:
+        return None
+    return candidate
+
+
 def _ip_sort_key(host: Host):
     """Numeric IP ordering; IPv4 before IPv6, unparseable addresses last."""
     try:

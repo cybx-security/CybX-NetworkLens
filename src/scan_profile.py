@@ -228,3 +228,43 @@ def analyzer_tcp_ports():
 def balanced_tcp_ports():
     """Top-1000 TCP unioned with every port the analyzer scores, sorted."""
     return sorted(set(TOP_1000_TCP) | set(analyzer_tcp_ports()))
+
+
+# Rough wall-clock cost per address for an uncapped scan, from typical LAN
+# runs. These are for setting expectations before a scan starts ("about 20
+# minutes"), not predictions: how many devices answer, how many ports each
+# has open, and how many scripts fire all move the real figure. Discovery
+# touches every address once; the others are dominated by the devices that
+# are actually up, so they assume roughly one address in six answers.
+_MODE_SECONDS_PER_ADDRESS = {
+    "discover": 0.08,
+    "quick": 1.5,
+    "full": 9.0,
+}
+
+
+def estimate_mode_seconds(mode, target, udp_scan=True, max_rate=None):
+    """
+    Expected duration of a scan of `target` in GUI mode `mode`, in seconds,
+    or None when the target can't be sized. Gentle mode is bounded by its
+    rate cap, so it uses the exact probe arithmetic instead of a heuristic.
+    """
+    hosts = count_target_hosts(target)
+    if not hosts:
+        return None
+    if mode == "gentle":
+        ports = len(balanced_tcp_ports())
+        return estimate_scan_seconds(target, ports, max_rate or GENTLE_MAX_RATE)
+    per = _MODE_SECONDS_PER_ADDRESS.get(mode, _MODE_SECONDS_PER_ADDRESS["full"])
+    if mode == "full" and not udp_scan:
+        per *= 0.7
+    return int(10 + hosts * per)
+
+
+def format_estimate(seconds):
+    """'about 2 minutes' / 'about 1.5 hours' / 'under a minute' for the GUI."""
+    if seconds is None:
+        return "unknown"
+    if seconds < 60:
+        return "under a minute"
+    return "about " + format_duration(seconds)

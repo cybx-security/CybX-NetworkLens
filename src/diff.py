@@ -269,6 +269,42 @@ def format_diff_text(diff: Dict[str, Any]) -> str:
     return "\n".join(line for line, _tag in format_diff_lines(diff))
 
 
+def find_previous_report(output_dir, target: str, exclude: Optional[str] = None) -> Optional[str]:
+    """
+    The most recent saved report for the same target in output_dir, or None.
+
+    Reports are matched on scan_metadata.target so '192.168.1.0/24' only ever
+    compares with earlier scans of exactly that spec. Ping sweeps are skipped:
+    diffing a full scan against one would report nothing but noise.
+    """
+    import json
+    from pathlib import Path
+
+    folder = Path(output_dir)
+    if not folder.is_dir():
+        return None
+    skip = Path(exclude).resolve() if exclude else None
+    candidates = []
+    for p in folder.glob("scan_*.json"):
+        if skip and p.resolve() == skip:
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                head = json.load(f)
+        except (OSError, ValueError):
+            continue
+        meta = head.get("scan_metadata") if isinstance(head, dict) else None
+        if not meta or meta.get("target") != target or "hosts" not in head:
+            continue
+        if is_discovery_report(head) or meta.get("partial"):
+            continue
+        candidates.append((meta.get("timestamp", ""), p.stat().st_mtime, p))
+    if not candidates:
+        return None
+    candidates.sort()
+    return str(candidates[-1][2])
+
+
 def load_report(path: str) -> Dict[str, Any]:
     """
     Load and sanity-check a saved report JSON.

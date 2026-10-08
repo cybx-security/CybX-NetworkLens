@@ -199,6 +199,23 @@ Note: This tool requires root/administrator privileges for full scan functionali
     )
 
     parser.add_argument(
+        '--compare-latest',
+        action='store_true',
+        help='After the scan, compare with the most recent saved report of the same '
+             'target in the output folder (what scheduled scans use). The changes are '
+             'printed, written next to the report as <report>_changes.txt, and stored '
+             'in the report under changes_since_previous.'
+    )
+
+    parser.add_argument(
+        '--output-dir',
+        metavar='FOLDER',
+        help='Folder for the report and events files (default: the configured output '
+             'folder). Scheduled scans pass this so a service account still writes to '
+             'the right place.'
+    )
+
+    parser.add_argument(
         '--timing', '-T',
         type=int,
         choices=[0, 1, 2, 3, 4, 5],
@@ -529,10 +546,39 @@ def main() -> int:
     # Determine output path
     if args.output:
         output_path = args.output
+        output_dir = Path(output_path).resolve().parent
     else:
-        output_dir = resolve_output_dir(output_config.get('directory'))
+        output_dir = Path(args.output_dir).resolve() if args.output_dir \
+            else resolve_output_dir(output_config.get('directory'))
         filename = generate_filename(args.target)
         output_path = str(output_dir / filename)
+
+    # Compare with the latest earlier report of this target before writing,
+    # so the comparison can be stored inside the new report.
+    if args.compare_latest and previous_report is None:
+        try:
+            from diff import load_report, find_previous_report
+        except ImportError:
+            from .diff import load_report, find_previous_report
+        latest = find_previous_report(output_dir, args.target)
+        if latest:
+            try:
+                previous_report = load_report(latest)
+                if not args.quiet:
+                    print(f"[*] Comparing with previous scan: {latest}")
+            except ValueError as e:
+                print(f"[!] Could not load previous report {latest}: {e}")
+        elif not args.quiet:
+            print("[*] No earlier report of this target to compare with; this scan becomes the baseline.")
+
+    comparison = None
+    if previous_report is not None:
+        try:
+            from diff import diff_reports
+        except ImportError:
+            from .diff import diff_reports
+        comparison = diff_reports(previous_report, output_data)
+        output_data["changes_since_previous"] = comparison
     
     # Write output
     try:
@@ -567,19 +613,31 @@ def main() -> int:
     if not args.quiet:
         print_summary(output_data)
 
-    # Compare against the previous report, if one was given. Printed even in
-    # quiet mode — the user explicitly asked for the diff.
-    if previous_report is not None:
+    # Report the comparison, if there was one. Printed even in quiet mode —
+    # the user explicitly asked for the diff — and saved beside the report so
+    # a scheduled scan leaves a readable "what changed" file behind.
+    if comparison is not None:
         try:
-            from diff import diff_reports, format_diff_text
+            from diff import format_diff_text
         except ImportError:
-            from .diff import diff_reports, format_diff_text
-        comparison = diff_reports(previous_report, output_data)
+            from .diff import format_diff_text
+        text = format_diff_text(comparison)
         print("=" * 60)
         print("CHANGES SINCE PREVIOUS SCAN")
         print("=" * 60)
-        print(format_diff_text(comparison))
+        print(text)
         print("=" * 60)
+        try:
+            changes_path = Path(final_path).with_name(Path(final_path).stem + "_changes.txt")
+            changes_path.write_text(text + "\n", encoding="utf-8")
+            try:
+                from paths import claim_for_owner
+            except ImportError:
+                from .paths import claim_for_owner
+            claim_for_owner(changes_path)
+            print(f"[+] Changes written to: {changes_path}")
+        except OSError as e:
+            print(f"[!] Could not write the changes file: {e}")
 
     return 0
 

@@ -626,4 +626,54 @@ assert paths.owner_home() == Path.home() or elevate.is_root()
 paths.claim_for_owner(Path(__file__))
 print("AppleScript built and backgrounded; loop guards hold; ownership helpers are safe")
 
+print("\n=== Testing Multiple Targets ===")
+from scanner import split_targets
+assert split_targets("10.0.0.1 10.0.0.5") == ["10.0.0.1", "10.0.0.5"]
+assert split_targets("10.0.0.0/24, 10.0.1.7") == ["10.0.0.0/24", "10.0.1.7"]
+assert split_targets("  host.local ") == ["host.local"]
+multi = build_nmap_command("10.0.0.1 10.0.0.5", privileged=True)
+assert multi[-2:] == ["10.0.0.1", "10.0.0.5"], multi[-3:]
+print("Space/comma separated targets become separate nmap arguments")
+
+print("\n=== Testing Partial-Scan Salvage, Previous Report, Estimates ===")
+from parser import salvage_partial_xml
+cut = sample_xml[:sample_xml.index("<host starttime=\"1704470400\" endtime=\"1704470410\">\n<status state=\"up\" reason=\"echo-reply\"/>\n<address addr=\"192.168.1.50\"") + 40]
+salvaged = salvage_partial_xml(cut)
+assert salvaged and parse_nmap_xml(salvaged).total_hosts_up == 1, "the finished host must survive a stop"
+assert salvage_partial_xml(sample_xml) is None, "a complete document needs no salvage"
+from diff import find_previous_report
+import tempfile, os
+with tempfile.TemporaryDirectory() as d:
+    for name, t, ts, extra in (("scan_a.json", "10.0.0.0/24", "2026-01-01", {}),
+                               ("scan_b.json", "10.0.0.0/24", "2026-02-01", {}),
+                               ("scan_c.json", "10.0.0.0/24", "2026-03-01", {"partial": True}),
+                               ("scan_d.json", "10.0.0.0/24", "2026-04-01", {"scan_type": "discovery"})):
+        json.dump({"scan_metadata": {"target": t, "timestamp": ts, **extra}, "hosts": []}, open(os.path.join(d, name), "w"))
+    assert find_previous_report(d, "10.0.0.0/24").endswith("scan_b.json"), "partial and discovery reports are not baselines"
+    assert find_previous_report(d, "10.9.9.0/24") is None
+from scan_profile import estimate_mode_seconds, format_estimate
+assert estimate_mode_seconds("discover", "192.168.1.0/24") < estimate_mode_seconds("quick", "192.168.1.0/24") < estimate_mode_seconds("full", "192.168.1.0/24")
+assert estimate_mode_seconds("full", "") is None and format_estimate(None) == "unknown"
+assert format_estimate(30) == "under a minute" and "minutes" in format_estimate(600)
+import netinfo
+nets = netinfo.parse_iflist("""DEV (SHORT) IP/MASK TYPE UP MTU MAC
+lo0 (lo0) 127.0.0.1/8 loopback up 16384
+en0 (en0) 10.3.3.143/24 ethernet up 1500 00:11:22:33:44:55
+bridge100 (bridge100) 10.211.55.2/24 ethernet up 1500 00:11:22:33:44:66
+en1 (en1) 172.16.0.9/16 ethernet up 1500 00:11:22:33:44:77
+utun0 (utun0) (none)/0 point2point up 1500
+**************************ROUTES**************************
+DST/MASK DEV METRIC GATEWAY
+0.0.0.0/0 en0 0 10.3.3.1
+""")
+assert [n.interface for n in nets] == ["en0", "en1", "bridge100"], [n.interface for n in nets]
+assert nets[0].default_route and nets[2].virtual
+big = [n for n in nets if n.interface == "en1"][0]
+assert big.suggested_target == "172.16.0.0/24" and big.is_trimmed, "a /16 is offered as the /24 around us"
+import report_html
+page = report_html.render_report(output, "T")
+assert "Executive summary" in page and "192.168.1.50" in page and "Findings by host" in page
+assert "<script" not in page.lower(), "the report is static HTML"
+print("Salvage keeps finished hosts; baseline picking skips partial/discovery; estimates ordered; interfaces ranked; HTML renders")
+
 print("\n✅ All tests passed!")

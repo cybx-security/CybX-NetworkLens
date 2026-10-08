@@ -130,6 +130,10 @@ ARCH="$(uname -m)"
 DMG="$BUILD_DIR/CybXNetworkLens-$VERSION-macos-$ARCH.dmg"
 STAGE="$(mktemp -d)"
 cp -R "$BUILD_DIR/networklens-gui.app" "$STAGE/CybX NetworkLens.app"
+# The CLI also rides inside the bundle: scheduled scans run it from there,
+# and it survives the drag to Applications (the loose copy below is for the
+# PATH / Homebrew's `binary` stanza).
+cp "$BUILD_DIR/networklens" "$STAGE/CybX NetworkLens.app/Contents/MacOS/networklens"
 cp "$BUILD_DIR/networklens" "$STAGE/networklens"
 cp "$PROJECT_DIR/packaging/macos/READ ME FIRST.txt" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"

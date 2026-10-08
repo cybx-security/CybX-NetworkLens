@@ -166,6 +166,33 @@ def config_candidates() -> List[Path]:
     return [bundled, Path("./config.json"), Path("./config/config.json")]
 
 
+def config_write_path() -> Path:
+    """
+    Where the Settings dialog saves: the file that was loaded if it is one of
+    the editable ones, otherwise the installed/user config location (never the
+    read-only copy baked into the build).
+    """
+    for candidate in config_candidates():
+        if candidate.exists() and candidate != bundle_root() / "config" / "config.json":
+            return candidate
+    if not is_frozen():
+        return bundle_root() / "config" / "config.json"
+    return machine_config_path()
+
+
+def save_config(config: dict, path: Optional[Path] = None) -> Path:
+    """Write the config as JSON, creating folders, and hand it to the user."""
+    import json
+    target = Path(path) if path else config_write_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=4)
+        f.write("\n")
+    claim_for_owner(target.parent)
+    claim_for_owner(target)
+    return target
+
+
 def icon_path(extension: str = "ico") -> Optional[Path]:
     """The app icon in the given format, or None if this build lacks it."""
     path = bundle_root() / "packaging" / "icon" / f"icon.{extension}"

@@ -69,7 +69,10 @@ installs anything until you say yes.
 1. Launch the scanner — the **CybX NetworkLens** Desktop icon (or
    `networklens-gui` if you're using the portable version). On Windows, approve the
    elevation prompt.
-2. Enter a **Target**. This can be:
+2. The **Target** is already filled in with your own network (the **Scan my network**
+   button puts it back, or lets you choose if the computer is on several). The
+   *Expected duration* line tells you roughly how long each mode takes. You can also
+   type a target yourself:
    - a single host — `192.168.1.10`
    - a range — `192.168.1.1-50`
    - a whole subnet — `192.168.1.0/24`
@@ -103,7 +106,18 @@ installs anything until you say yes.
    - **Open Output Folder** — every finished scan is saved here automatically
      (`Documents\CybX NetworkLens\output`), so nothing is lost if you forget to save.
 
-   **Stop** ends a scan early. A stopped scan is not saved.
+   **Stop** ends a scan early. The devices that were already finished are kept and the
+   report is marked *partial*.
+   - **Export Report (HTML)...** — a report you can send to the customer (open it in a
+     browser and use Print › Save as PDF for a PDF). One is also written automatically
+     with every scan.
+   - **History** tab — every previous scan: open it, export it, or compare the current
+     results against it to see what changed.
+   - **Tools › Scheduled Scan...** — run a scan every week (or day) automatically and
+     get a *changes* file each time listing new devices, opened/closed ports and changed
+     services.
+   - **Settings...** — where reports go, the Insights feed, and update checks.
+   - **Tools › Save Support Info...** — if something goes wrong, send us this zip.
 
 ### The command line
 

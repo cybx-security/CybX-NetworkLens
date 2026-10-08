@@ -4,6 +4,7 @@ and capturing output for parsing.
 """
 
 import os
+import re
 import shutil
 import sys
 import subprocess
@@ -251,6 +252,16 @@ def script_expression(categories: List[str], external_scripts: bool = False) -> 
     return f'{selected} and not external'
 
 
+def split_targets(target: str) -> List[str]:
+    """
+    One argv entry per target. nmap takes several targets as separate
+    arguments; a Target box or --target value like "10.0.0.1 10.0.0.5" or
+    "10.0.0.0/24, 10.0.1.7" has to be split or nmap tries to resolve the
+    whole string as one hostname.
+    """
+    return [t for t in re.split(r'[\s,]+', (target or '').strip()) if t]
+
+
 def normalize_exclude(exclude: Optional[str]) -> Optional[str]:
     """
     Clean a user-supplied exclude list into what nmap's --exclude expects:
@@ -426,7 +437,7 @@ def build_nmap_command(
         if exclude_spec:
             cmd.extend(['--exclude', exclude_spec])
         cmd.extend(['-oX', xml_output_path if xml_output_path else '-'])
-        cmd.append(target)
+        cmd.extend(split_targets(target))
         return cmd
 
     # Any data file nmap needs but doesn't have turns its feature into a hard
@@ -498,8 +509,7 @@ def build_nmap_command(
     # can stream on stdout without conflicting with the XML payload).
     cmd.extend(['-oX', xml_output_path if xml_output_path else '-'])
 
-    # Add target
-    cmd.append(target)
+    cmd.extend(split_targets(target))
 
     return cmd
 

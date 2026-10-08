@@ -23,6 +23,10 @@ in the reporter (CybX Insight), not here, so no scan data ever leaves the machin
 - **Insights integration** — writes per-port `nmap_chat` events for CybX Insight
 - **Npcap handled for you** (Windows) — the installer and the GUI both offer to run Npcap's setup if it's missing
 - **Self-updating** — *Check for Updates...* fetches the latest release from GitHub, verifies it, installs it, and reopens the app
+- **Scan my network** — detects the machine's own subnet and fills it in, with an expected duration per scan mode
+- **Hand-over report** — every scan also produces a self-contained HTML report (print it to PDF from the browser)
+- **Scheduled scans** — a weekly/daily scan that records *what changed* since the previous one
+- **History tab, Settings dialog, support bundle** — previous reports one click away; no JSON editing; one zip for problem reports
 
 ---
 
@@ -504,6 +508,8 @@ Insights events (see [Output](#output)).
 | `--compare` | Previous report JSON to diff against: new/missing hosts, opened/closed ports, changed services |
 | `--self-test` | Verify this build can scan (see Step 3b) |
 | `--check-update` | Report whether a newer release is published (exit 10 if so) |
+| `--compare-latest` | Diff against the newest earlier report of the same target in the output folder; writes `<report>_changes.txt` and stores the diff in the report |
+| `--output-dir` | Folder for the report files (what scheduled scans pass) |
 | `--no-vuln` | Skip vulnerability scripts (faster) |
 | `--no-udp` | Skip the targeted UDP scan (faster; misses SNMP/IPMI/TFTP/NetBIOS) |
 | `--quiet`, `-q` | Minimal output |
@@ -513,8 +519,12 @@ Insights events (see [Output](#output)).
 ## Usage (GUI)
 
 1. Launch **CybX NetworkLens** from the Desktop icon (or `networklens-gui` for
-   the portable build). On Windows it auto-elevates.
-2. Enter a **Target** (IP, range, or CIDR) and optionally specific **Ports**.
+   the portable build). On Windows it auto-elevates; macOS and Linux ask for your password.
+2. The **Target** is pre-filled with your own network (e.g. `192.168.1.0/24`) — the
+   **Scan my network** button restores it if you change it, and lets you pick when the
+   machine is on more than one network. Or type any IP, range, CIDR, or several
+   separated by spaces. The line under the options shows the **expected duration** for
+   the chosen mode. Optionally enter specific **Ports**.
 3. Pick a **Scan mode**:
    - **Discover** — ping sweep: which hosts are alive, in seconds. No ports probed.
    - **Gentle** — rate-capped, one probe at a time, no OS/vuln/UDP. For networks with
@@ -528,13 +538,38 @@ Insights events (see [Output](#output)).
    The mode presets the detailed toggles below it (**OS Detection**, **Vulnerability
    Scripts**, **UDP**), which you can still fine-tune, along with **Timing**.
 4. Click **Start Scan**. Watch the progress bar and the **Live Log** tab.
-   **Stop** ends a scan early; a stopped scan saves nothing.
+   **Stop** ends a scan early; the hosts that had finished are kept and the report is
+   marked *partial* (it is saved, but not sent to Insights).
 5. Review the **Inventory** tab (one row per device), the **Results** tab (per-host tree
    with risk levels, findings, recommendations) and the **Raw JSON** tab.
-6. Every finished scan is saved automatically — **Open Output Folder** shows the files.
-   **Save Report...** / **Save Insights Events...** / **Export Inventory CSV...** write
-   extra copies wherever you choose; **Compare with Previous...** diffs against an older
-   report.
+6. Every finished scan is saved automatically as JSON **and as an HTML report** you can
+   hand to a customer (open it in a browser and *Print › Save as PDF* for a PDF) —
+   **Open Output Folder** shows the files. **Export Report (HTML)...**, *File › Save
+   Report / Export Inventory CSV / Save Insights Events* write extra copies wherever you
+   choose.
+7. The **History** tab lists every report in the output folder: open one, export it as
+   HTML, or compare the current results against it. *Tools › Compare with Previous
+   Scan...* does the same with any file.
+8. **Settings...** (also under *Tools*) sets the output folder, the Insights feed file,
+   whether external nmap scripts are allowed, and the startup update check — no JSON
+   editing. *Tools › Save Support Info...* writes one zip (versions, settings, logs,
+   recent scan metadata — never scan results) to attach to a problem report.
+
+### Scheduled scans
+
+*Tools › Scheduled Scan...* sets up one recurring scan (daily or weekly, at a time you
+choose) that runs with full rights whether or not anyone is logged in — Task Scheduler
+on Windows, launchd on macOS, cron on Linux. Each run writes the report, the HTML
+copy, the Insights events, and a `<report>_changes.txt` listing new/missing hosts,
+opened/closed ports and changed services since the previous scan of that target. The
+same thing from the command line:
+
+```bash
+networklens --target 192.168.1.0/24 --compare-latest
+```
+
+Scheduling needs the installed copy (it runs the `networklens` CLI next to the app),
+not the portable exe.
 
 ---
 
@@ -674,6 +709,11 @@ CybXNetworkLens/
 │   ├── paths.py         # Where config, reports and bundled files live
 │   ├── version.py       # The version number (one place)
 │   ├── updater.py       # Check for Updates: GitHub Releases, verify, install, relaunch
+│   ├── elevate.py       # macOS/Linux: ask for admin rights at launch
+│   ├── netinfo.py       # "Scan my network": the machine's own subnet
+│   ├── report_html.py   # The hand-over HTML report
+│   ├── scheduled.py     # Scheduled scans (Task Scheduler / launchd / cron)
+│   ├── diagnostics.py   # Support-info bundle
 │   └── output.py        # Report JSON + Insights nmap_chat NDJSON events
 ├── config/config.json   # Scan + output settings (no secrets)
 ├── insights/            # CybX Insight collector rules + config for ingest
@@ -684,6 +724,7 @@ CybXNetworkLens/
 ├── installers/
 │   └── windows/         # Npcap installer (auto-downloaded at build time)
 ├── packaging/
+│   ├── winget/, homebrew/   # Package-manager listings (see their READMEs)
 │   ├── icon/            # App icon (.ico/.icns/.png) — regenerate with make_icon.py
 │   ├── installed_app.spec   # PyInstaller build of the folder the installer ships
 │   └── windows/installer.nsi # The Windows installer / uninstaller (NSIS)
@@ -736,5 +777,7 @@ nothing — but you'll miss SNMP/IPMI/TFTP (UDP), OS fingerprints, and topology.
 | Build ends with `INSTALLER NOT BUILT` | NSIS isn't installed — `winget install NSIS.NSIS`, then re-run the build |
 | Windows SmartScreen / antivirus blocks the installer or .exe | Unsigned PyInstaller binaries often trip heuristics on first run — **More info > Run anyway**, or whitelist it |
 | Slow startup of the portable GUI | A single-file exe unpacks to temp on each launch. The installed version doesn't — use the installer |
+| Target box says "couldn't work out your network" | nmap couldn't list interfaces (on Windows usually Npcap missing); type the target by hand |
+| Scheduled scan never runs | Check Task Scheduler / `launchctl list` / `/etc/cron.d`; the log is `/var/log/cybx-networklens-scan.log` on macOS/Linux. Scheduling needs the installed copy |
 | Can't find my scan reports | Click **Open Output Folder**; installed and portable builds save to `Documents\CybX NetworkLens\output` |
 | Settings changes are ignored | The Live Log names the config file in use at startup, and warns if it couldn't be read (usually an unescaped `\` in a path) |

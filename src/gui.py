@@ -9,6 +9,7 @@ and parsed for progress percentages.
 
 import csv
 import json
+from datetime import datetime
 import os
 import platform
 import queue
@@ -39,10 +40,16 @@ try:
                        NPCAP_DOWNLOAD_URL)
     from diff import diff_reports, format_diff_lines, load_report
     from parser import port_dict_is_open
-    from paths import resolve_output_dir, icon_path, claim_for_owner
+    from paths import resolve_output_dir, icon_path, claim_for_owner, save_config, config_write_path
     from version import __version__
     import updater
     from elevate import relaunch_elevated
+    from scan_profile import estimate_mode_seconds, format_estimate
+    from parser import salvage_partial_xml
+    import netinfo
+    import report_html
+    import scheduled
+    import diagnostics
 except ImportError:
     from .scanner import (build_nmap_command, check_privileges, get_nmap_version,
                           nmap_environment_warnings, exit_code_hint, rate_limit_warning,
@@ -58,10 +65,16 @@ except ImportError:
                         NPCAP_DOWNLOAD_URL)
     from .diff import diff_reports, format_diff_lines, load_report
     from .parser import port_dict_is_open
-    from .paths import resolve_output_dir, icon_path, claim_for_owner
+    from .paths import resolve_output_dir, icon_path, claim_for_owner, save_config, config_write_path
     from .version import __version__
     from . import updater
     from .elevate import relaunch_elevated
+    from .scan_profile import estimate_mode_seconds, format_estimate
+    from .parser import salvage_partial_xml
+    from . import netinfo
+    from . import report_html
+    from . import scheduled
+    from . import diagnostics
 
 
 PROGRESS_RE = re.compile(r"About ([\d.]+)% done", re.IGNORECASE)
@@ -72,8 +85,18 @@ class ScannerGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(f"CybX NetworkLens {__version__}")
-        self.root.geometry("1000x750")
-        self.root.minsize(800, 600)
+        # Pixel sizes below are designed for 96 dpi; scale them on high-DPI
+        # Windows screens (Tk scales fonts itself, not widget geometry).
+        self.scale = 1.0
+        if platform.system() == "Windows":
+            try:
+                self.scale = max(1.0, root.winfo_fpixels("1i") / 96.0)
+            except tk.TclError:
+                pass
+        self.root.geometry(f"{self.px(1000)}x{self.px(750)}")
+        self.root.minsize(self.px(800), self.px(600))
+        self._actions: Dict[str, list] = {}
+        self.local_networks: list = []
 
         self.event_queue: "queue.Queue[tuple]" = queue.Queue()
         self.proc: Optional[subprocess.Popen] = None
@@ -104,6 +127,8 @@ class ScannerGUI:
             self._log(msg, "warn" if msg.startswith("[!]") else "info")
         self._log(f"[*] Reports are saved to: {self.output_dir}", "info")
         self._show_environment()
+        self.root.after(300, self._detect_network)
+        self.root.after(600, self.refresh_history)
         # Run the Npcap check after the window is on screen so the user sees the
         # GUI before any modal dialog appears.
         self.root.after(200, self._check_npcap)
@@ -112,6 +137,62 @@ class ScannerGUI:
         self._poll_queue()
 
     # ---------- UI construction ----------
+
+    def px(self, n: int) -> int:
+        """A 96-dpi pixel size scaled for this screen."""
+        return int(round(n * self.scale))
+
+    def _register(self, name: str, *controls) -> None:
+        """Buttons and menu entries that enable/disable together."""
+        self._actions.setdefault(name, []).extend(controls)
+
+    def _enable(self, name: str, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        for control in self._actions.get(name, []):
+            try:
+                if isinstance(control, tuple):   # (menu, label)
+                    control[0].entryconfig(control[1], state=state)
+                else:
+                    control.config(state=state)
+            except tk.TclError:
+                pass
+
+    def _build_menu(self) -> None:
+        menubar = tk.Menu(self.root)
+        file_menu = tk.Menu(menubar, tearoff=False)
+        file_menu.add_command(label="Open Report...", command=self.open_report)
+        file_menu.add_command(label="Save Report (JSON)...", command=self.save_report)
+        file_menu.add_command(label="Export Report (HTML)...", command=self.export_html_report)
+        file_menu.add_command(label="Export Inventory (CSV)...", command=self.export_inventory_csv)
+        file_menu.add_command(label="Save Insights Events...", command=self.save_events)
+        file_menu.add_separator()
+        file_menu.add_command(label="Open Output Folder", command=self.open_output_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label="Quit", command=self.on_close)
+        menubar.add_cascade(label="File", menu=file_menu)
+        self._register("save", (file_menu, "Save Report (JSON)..."), (file_menu, "Export Report (HTML)..."),
+                       (file_menu, "Export Inventory (CSV)..."))
+        self._register("events", (file_menu, "Save Insights Events..."))
+
+        tools = tk.Menu(menubar, tearoff=False)
+        tools.add_command(label="Compare with Previous Scan...", command=self.compare_with_previous)
+        tools.add_command(label="Scheduled Scan...", command=self.open_schedule_dialog)
+        tools.add_command(label="Settings...", command=self.open_settings_dialog)
+        tools.add_separator()
+        tools.add_command(label="Check for Updates...", command=self.check_for_updates)
+        tools.add_command(label="Save Support Info...", command=self.save_support_info)
+        menubar.add_cascade(label="Tools", menu=tools)
+        self._register("compare", (tools, "Compare with Previous Scan..."))
+
+        help_menu = tk.Menu(menubar, tearoff=False)
+        help_menu.add_command(label="User Guide (online)",
+                              command=lambda: webbrowser.open(f"https://github.com/{updater.REPO}#readme"))
+        help_menu.add_command(label="Releases & Downloads", command=lambda: webbrowser.open(updater.RELEASES_PAGE))
+        help_menu.add_command(label="About", command=lambda: messagebox.showinfo(
+            "About", f"CybX NetworkLens {__version__}\n\nFinds the devices on a network, lists their open "
+                     "ports and services, and flags the risky ones.\n\nhttps://github.com/" + updater.REPO))
+        menubar.add_cascade(label="Help", menu=help_menu)
+        self.root.config(menu=menubar)
 
     def _set_window_icon(self) -> None:
         """Title-bar/taskbar icon. Cosmetic, so any failure is ignored."""
@@ -139,11 +220,18 @@ class ScannerGUI:
         form = ttk.LabelFrame(self.root, text="Scan Configuration", padding=10)
         form.pack(fill="x", padx=10, pady=(10, 5))
 
+        self._build_menu()
+
         ttk.Label(form, text="Target:").grid(row=0, column=0, sticky="w", padx=2, pady=2)
         self.target_var = tk.StringVar()
         ttk.Entry(form, textvariable=self.target_var).grid(row=0, column=1, sticky="we", padx=4, pady=2)
-        ttk.Label(form, text="IP, range, or CIDR (e.g. 192.168.1.0/24)",
-                  foreground="#666").grid(row=0, column=2, sticky="w", padx=2)
+        target_side = ttk.Frame(form)
+        target_side.grid(row=0, column=2, sticky="w", padx=2)
+        self.my_network_btn = ttk.Button(target_side, text="Scan my network", command=self.use_my_network,
+                                         state="disabled")
+        self.my_network_btn.pack(side="left")
+        self.my_network_var = tk.StringVar(value="finding your network...")
+        ttk.Label(target_side, textvariable=self.my_network_var, foreground="#666").pack(side="left", padx=6)
 
         ttk.Label(form, text="Ports:").grid(row=1, column=0, sticky="w", padx=2, pady=2)
         self.ports_var = tk.StringVar()
@@ -205,10 +293,17 @@ class ScannerGUI:
                              "(PLCs, medical devices, old printers).",
                   foreground="#666").pack(side="left", padx=6)
 
+        # Expected duration, so a /16 Full scan is a decision, not a surprise.
+        self.estimate_var = tk.StringVar(value="")
+        ttk.Label(form, textvariable=self.estimate_var, foreground="#2b6cb0").grid(
+            row=6, column=0, columnspan=3, sticky="w", padx=2, pady=(6, 0))
+        for var in (self.target_var, self.mode_var, self.udp_var, self.max_rate_var, self.ports_var):
+            var.trace_add("write", lambda *_: self._update_estimate())
+
         form.columnconfigure(1, weight=1)
         self._apply_mode()
 
-        # Buttons
+        # Buttons: the everyday actions. Everything else lives in the menus.
         btns = ttk.Frame(self.root)
         btns.pack(fill="x", padx=10, pady=5)
         self.start_btn = ttk.Button(btns, text="▶  Start Scan", command=self.start_scan)
@@ -216,18 +311,16 @@ class ScannerGUI:
         self.stop_btn = ttk.Button(btns, text="■  Stop", command=self.stop_scan, state="disabled")
         self.stop_btn.pack(side="left", padx=2)
         self.save_btn = ttk.Button(btns, text="Save Report...", command=self.save_report, state="disabled")
-        self.save_btn.pack(side="left", padx=2)
-        self.save_events_btn = ttk.Button(btns, text="Save Insights Events...", command=self.save_events, state="disabled")
-        self.save_events_btn.pack(side="left", padx=2)
-        self.export_csv_btn = ttk.Button(btns, text="Export Inventory CSV...", command=self.export_inventory_csv, state="disabled")
-        self.export_csv_btn.pack(side="left", padx=2)
-        ttk.Button(btns, text="Open Report...", command=self.open_report).pack(side="left", padx=2)
-        self.compare_btn = ttk.Button(btns, text="Compare with Previous...", command=self.compare_with_previous, state="disabled")
-        self.compare_btn.pack(side="left", padx=2)
+        self.save_btn.pack(side="left", padx=(12, 2))
+        self.export_html_btn = ttk.Button(btns, text="Export Report (HTML)...", command=self.export_html_report,
+                                          state="disabled")
+        self.export_html_btn.pack(side="left", padx=2)
+        self._register("save", self.save_btn, self.export_html_btn)
         ttk.Button(btns, text="Open Output Folder", command=self.open_output_folder).pack(side="left", padx=2)
         ttk.Button(btns, text="Quit", command=self.on_close).pack(side="right", padx=2)
         self.update_btn = ttk.Button(btns, text="Check for Updates...", command=self.check_for_updates)
         self.update_btn.pack(side="right", padx=2)
+        ttk.Button(btns, text="Settings...", command=self.open_settings_dialog).pack(side="right", padx=2)
 
         # Progress
         prog = ttk.LabelFrame(self.root, text="Progress", padding=8)
@@ -269,7 +362,7 @@ class ScannerGUI:
         }
         for col, (title, width) in headings.items():
             self.inv_tree.heading(col, text=title)
-            self.inv_tree.column(col, width=width, stretch=(col == "ports"))
+            self.inv_tree.column(col, width=self.px(width), stretch=(col == "ports"))
         inv_vsb = ttk.Scrollbar(inv_frame, orient="vertical", command=self.inv_tree.yview)
         inv_hsb = ttk.Scrollbar(inv_frame, orient="horizontal", command=self.inv_tree.xview)
         self.inv_tree.configure(yscrollcommand=inv_vsb.set, xscrollcommand=inv_hsb.set)
@@ -311,8 +404,8 @@ class ScannerGUI:
         self.tree = ttk.Treeview(tree_wrap, columns=("detail",), show="tree headings")
         self.tree.heading("#0", text="Item")
         self.tree.heading("detail", text="Detail / Risk")
-        self.tree.column("#0", width=420, stretch=True)
-        self.tree.column("detail", width=420, stretch=True)
+        self.tree.column("#0", width=self.px(420), stretch=True)
+        self.tree.column("detail", width=self.px(420), stretch=True)
         self.tree.tag_configure("critical", foreground="#b00020")
         self.tree.tag_configure("high",     foreground="#a25600")
         self.tree.tag_configure("medium",   foreground="#856100")
@@ -342,6 +435,32 @@ class ScannerGUI:
         self.diff_text.configure(state="disabled")
         nb.add(self.diff_text, text="Changes")
 
+        # History — every report in the output folder, newest first
+        hist = ttk.Frame(nb)
+        nb.add(hist, text="History")
+        hist_cols = ("when", "target", "type", "hosts", "risk", "file")
+        self.hist_tree = ttk.Treeview(hist, columns=hist_cols, show="headings", selectmode="browse")
+        for col, title, width in (("when", "Scanned", 170), ("target", "Target", 170), ("type", "Type", 90),
+                                  ("hosts", "Hosts up", 70), ("risk", "Risk", 80), ("file", "File", 320)):
+            self.hist_tree.heading(col, text=title)
+            self.hist_tree.column(col, width=self.px(width), stretch=(col == "file"))
+        hist_vsb = ttk.Scrollbar(hist, orient="vertical", command=self.hist_tree.yview)
+        self.hist_tree.configure(yscrollcommand=hist_vsb.set)
+        self.hist_tree.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=(8, 0))
+        hist_vsb.grid(row=0, column=1, sticky="ns", pady=(8, 0))
+        hist.rowconfigure(0, weight=1)
+        hist.columnconfigure(0, weight=1)
+        hist_btns = ttk.Frame(hist)
+        hist_btns.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=6)
+        ttk.Button(hist_btns, text="Refresh", command=self.refresh_history).pack(side="left", padx=2)
+        ttk.Button(hist_btns, text="Open", command=self.open_history_item).pack(side="left", padx=2)
+        ttk.Button(hist_btns, text="Compare current with selected", command=self.compare_history_item).pack(side="left", padx=2)
+        ttk.Button(hist_btns, text="Export selected as HTML...", command=self.export_history_item).pack(side="left", padx=2)
+        self.hist_tree.bind("<Double-1>", lambda _e: self.open_history_item())
+        self.hist_note_var = tk.StringVar(value="")
+        ttk.Label(hist, textvariable=self.hist_note_var, foreground="#666").grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+
     MODE_HINTS = {
         "discover": "Discover = ping sweep: who is alive. Seconds, no ports probed.",
         "quick": "Quick = ports + services only. Fast sweep.",
@@ -349,6 +468,35 @@ class ScannerGUI:
                   "For fragile gear. Much slower.",
         "full": "Full = + OS, UDP, scripts, CVEs, traceroute.",
     }
+
+    def _update_estimate(self) -> None:
+        target = self.target_var.get().strip()
+        if not target:
+            self.estimate_var.set("")
+            return
+        mode = self.mode_var.get()
+        rate = None
+        try:
+            rate = int(self.max_rate_var.get().strip() or 0) or None
+        except ValueError:
+            pass
+        if self.ports_var.get().strip() and mode != "discover":
+            self.estimate_var.set("Custom port list: duration depends on how many ports you chose.")
+            return
+        if rate and mode != "gentle":
+            seconds = rate_limit_warning  # noqa: F841 (use the exact arithmetic below)
+            try:
+                from scan_profile import estimate_scan_seconds, balanced_tcp_ports
+            except ImportError:
+                from .scan_profile import estimate_scan_seconds, balanced_tcp_ports
+            seconds = estimate_scan_seconds(target, len(balanced_tcp_ports()), rate)
+        else:
+            seconds = estimate_mode_seconds(mode, target, self.udp_var.get(), rate)
+        if seconds is None:
+            self.estimate_var.set("")
+            return
+        self.estimate_var.set(f"Expected duration: {format_estimate(seconds)} "
+                              "(depends on how many devices answer)")
 
     def _apply_mode(self) -> None:
         """Preset the detailed toggles and rate cap from the selected scan mode."""
@@ -405,6 +553,54 @@ class ScannerGUI:
         elif is_windows() and not is_npcap_installed():
             self._log("[!] Npcap is not installed, so scans fall back to TCP-connect mode: "
                       "no SYN scan, OS detection, or UDP until it is.", "warn")
+
+    def _detect_network(self) -> None:
+        """Find the machine's own network in the background and offer it as the target."""
+        def worker() -> None:
+            try:
+                nets = netinfo.local_networks()
+            except Exception:
+                nets = []
+            self.event_queue.put(("networks", nets))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_networks(self, nets: list) -> None:
+        self.local_networks = nets
+        if not nets:
+            self.my_network_var.set("couldn't work out your network - type a target")
+            return
+        best = nets[0]
+        note = best.label
+        if best.is_trimmed:
+            note += f" (your network is {best.network}; the /24 around you is offered)"
+        if best.virtual:
+            note += " - a virtual adapter; on a VM use Bridged networking"
+        self.my_network_var.set(note)
+        self.my_network_btn.config(state="normal")
+        if not self.target_var.get().strip():
+            self.target_var.set(best.suggested_target)
+            self._log(f"[*] Your network looks like {best.suggested_target} ({best.interface}); "
+                      "it has been filled in as the target.", "info")
+
+    def use_my_network(self) -> None:
+        if not self.local_networks:
+            return
+        if len(self.local_networks) == 1:
+            self.target_var.set(self.local_networks[0].suggested_target)
+            return
+        # More than one network: let the user pick.
+        win = tk.Toplevel(self.root)
+        win.title("Which network?")
+        win.transient(self.root)
+        ttk.Label(win, text="This computer is on more than one network:", padding=10).pack(anchor="w")
+        choice = tk.StringVar(value=self.local_networks[0].suggested_target)
+        for n in self.local_networks:
+            ttk.Radiobutton(win, text=n.label, variable=choice, value=n.suggested_target).pack(anchor="w", padx=20)
+        def ok() -> None:
+            self.target_var.set(choice.get())
+            win.destroy()
+        ttk.Button(win, text="Use this network", command=ok).pack(pady=10)
+        win.grab_set()
 
     def _check_npcap(self) -> None:
         """On Windows, prompt the user to install Npcap if it's missing."""
@@ -531,10 +727,9 @@ class ScannerGUI:
         self._stop_requested = False
         self._set_diff_text([("Scan in progress. When it finishes, click "
                               "\"Compare with Previous...\" and pick an older report.", "info")])
-        self.save_btn.config(state="disabled")
-        self.save_events_btn.config(state="disabled")
-        self.export_csv_btn.config(state="disabled")
-        self.compare_btn.config(state="disabled")
+        self._enable("save", False)
+        self._enable("events", False)
+        self._enable("compare", False)
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
         self.progress.config(mode="indeterminate")
@@ -651,13 +846,19 @@ class ScannerGUI:
             finally:
                 self._remove_xml_tmp()
 
-        # Stopped on purpose: nmap was killed mid-write, so its XML is cut off
-        # and there is nothing to parse. That is not a failure.
+        # Stopped on purpose: nmap was killed mid-write. Whatever hosts it had
+        # finished are still in the cut-off XML, so show those rather than
+        # throwing an hour of scanning away.
+        partial = False
         if self._stop_requested:
-            self.event_queue.put(("done", {"stopped": True}))
-            return
+            salvaged = salvage_partial_xml(xml)
+            if not salvaged:
+                self.event_queue.put(("done", {"stopped": True}))
+                return
+            xml = salvaged
+            partial = True
 
-        if rc != 0 and not xml:
+        if rc != 0 and not xml and not partial:
             hint = exit_code_hint(rc)
             self.event_queue.put(("done", {
                 "error": f"nmap exited with code {rc} and produced no XML output."
@@ -667,7 +868,7 @@ class ScannerGUI:
 
         # An aborted run still leaves parseable XML, which would otherwise be
         # reported as a successful scan that simply found nothing.
-        run_error = nmap_run_error(xml)
+        run_error = None if partial else nmap_run_error(xml)
         if run_error:
             self.event_queue.put(("done", {
                 "error": f"nmap aborted before scanning anything (exit code {rc}): {run_error}"
@@ -675,7 +876,8 @@ class ScannerGUI:
             return
 
         # Parse + analyze in the worker so the UI thread stays responsive
-        self.event_queue.put(("line", f"[*] nmap exited with code {rc}. Parsing results..."))
+        self.event_queue.put(("line", "[*] Scan stopped - keeping the hosts that finished..." if partial
+                              else f"[*] nmap exited with code {rc}. Parsing results..."))
         try:
             scan_result = parse_nmap_xml(xml)
         except Exception as e:
@@ -693,7 +895,10 @@ class ScannerGUI:
                                         scan_type=scan_type)
         events = create_nmap_chat_events(scan_result, analysis, target, __version__,
                                          scan_type=scan_type)
-        self.event_queue.put(("done", {"output": output, "events": events, "raw_xml_present": bool(xml)}))
+        if partial:
+            output["scan_metadata"]["partial"] = True
+        self.event_queue.put(("done", {"output": output, "events": events, "raw_xml_present": bool(xml),
+                                       "partial": partial}))
 
     def _scan_running(self) -> bool:
         return bool(self.scan_thread and self.scan_thread.is_alive())
@@ -740,6 +945,8 @@ class ScannerGUI:
                     self._handle_done(payload)
                 elif kind == "npcap_done":
                     self._handle_npcap_done(payload)
+                elif kind == "networks":
+                    self._handle_networks(payload)
                 elif kind == "update_check":
                     self._handle_update_check(*payload)
                 elif kind == "update_progress":
@@ -802,6 +1009,10 @@ class ScannerGUI:
 
         self.last_output = output
         self.last_events = payload.get("events") or []
+        partial = bool(payload.get("partial"))
+        if partial:
+            self._log(f"[!] Scan stopped early: showing the {output.get('scan_metadata', {}).get('hosts_up', 0)} "
+                      "host(s) that finished. The report is marked partial and is NOT sent to Insights.", "warn")
 
         # Surface scan-quality problems in the log immediately: if host
         # discovery was wrong, every result below is wrong with it.
@@ -815,10 +1026,10 @@ class ScannerGUI:
         self.json_text.insert("1.0", json.dumps(output, indent=2))
         ai_summary = output.get("ai_analysis_summary", {})
         overall = ai_summary.get("overall_risk", "info").upper()
-        self.status_var.set(f"Scan complete. Overall risk: {overall}")
-        self.save_btn.config(state="normal")
-        self.export_csv_btn.config(state="normal")
-        self.compare_btn.config(state="normal")
+        self.status_var.set((f"Scan stopped - partial results. Risk so far: {overall}" if partial
+                             else f"Scan complete. Overall risk: {overall}"))
+        self._enable("save", True)
+        self._enable("compare", True)
         self.nb.select(1)  # jump to the Inventory tab
 
         # Auto-write both artifacts into the output directory so a scan is never
@@ -834,12 +1045,20 @@ class ScannerGUI:
             written = write_json_output(output, str(report_path))
             self.last_saved_report = str(report_path)
             self._log(f"[+] Report auto-saved to {written}", "ok")
+            # And the hand-over version next to it, so it exists without a click.
+            try:
+                html_path = report_html.write_html_report(output, str(report_path.with_suffix(".html")),
+                                                          title=f"Network Scan Report - {target}")
+                self._log(f"[+] HTML report auto-saved to {html_path}", "ok")
+            except Exception as e:
+                self._log(f"[!] Failed to write the HTML report: {e}", "warn")
         except Exception as e:
             self._log(f"[!] Failed to auto-save report: {e}", "warn")
             report_path = None
+        self.refresh_history()
 
         if self.last_events:
-            self.save_events_btn.config(state="normal")
+            self._enable("events", True)
             try:
                 # Pair the events file to the report by swapping the extension.
                 if report_path is not None:
@@ -857,7 +1076,10 @@ class ScannerGUI:
                 # when it would double-write the same file we just wrote.
                 insights_cfg = self.config.get("output", {}).get("insights_events", {})
                 collector_path = insights_cfg.get("path")
-                if insights_cfg.get("enabled", True) and collector_path:
+                if partial:
+                    self._log("[*] Partial scan: events saved locally only, not appended to the "
+                              "Insights feed.", "warn")
+                elif insights_cfg.get("enabled", True) and collector_path:
                     if Path(collector_path).resolve() != Path(events_path).resolve():
                         appended = write_ndjson_events(
                             self.last_events, collector_path, append=True)
@@ -1097,6 +1319,9 @@ class ScannerGUI:
                 "scan, not the report itself. Open the matching .json report to "
                 f"reload a scan.{hint}")
             return
+        self._load_report_file(path)
+
+    def _load_report_file(self, path: str) -> None:
         try:
             output = load_report(path)
         except ValueError as e:
@@ -1107,7 +1332,7 @@ class ScannerGUI:
         # A saved report doesn't carry the NDJSON events; those belong to the
         # scan that produced it, so Save Insights Events stays disabled.
         self.last_events = None
-        self.save_events_btn.config(state="disabled")
+        self._enable("events", False)
         self._set_diff_text([("Report loaded. Click \"Compare with Previous...\" and pick an "
                               "older report of the same network.", "info")])
 
@@ -1121,9 +1346,8 @@ class ScannerGUI:
         self._log(f"[+] Loaded report: {path}", "ok")
         self._log(f"    {loaded}", "info")
         self.status_var.set(f"Loaded report: {loaded}")
-        self.save_btn.config(state="normal")
-        self.export_csv_btn.config(state="normal")
-        self.compare_btn.config(state="normal")
+        self._enable("save", True)
+        self._enable("compare", True)
         self.nb.select(1)  # jump to the Inventory tab
 
     def compare_with_previous(self) -> None:
@@ -1138,6 +1362,9 @@ class ScannerGUI:
         )
         if not path:
             return
+        self._compare_with_file(path)
+
+    def _compare_with_file(self, path: str) -> None:
         try:
             previous = load_report(path)
         except ValueError as e:
@@ -1300,6 +1527,271 @@ class ScannerGUI:
         self._log(f"[!] {error}", "error")
         messagebox.showerror("Update failed", error + f"\n\nYou can also download it from\n{updater.RELEASES_PAGE}")
 
+    # ---------- Report export, settings, scheduling, history, support ----------
+
+    def export_html_report(self) -> None:
+        if not self.last_output:
+            return
+        target = self.last_output.get("scan_metadata", {}).get("target", "scan")
+        default_name = generate_filename(target, "html")
+        initial_dir = str(self.output_dir)
+        Path(initial_dir).mkdir(parents=True, exist_ok=True)
+        path = filedialog.asksaveasfilename(
+            defaultextension=".html", initialdir=initial_dir, initialfile=default_name,
+            filetypes=[("HTML report", "*.html"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            written = report_html.write_html_report(self.last_output, path,
+                                                    title=f"Network Scan Report - {target}")
+            self._log(f"[+] HTML report saved to {written}", "ok")
+            if messagebox.askyesno("Report exported",
+                                   f"Saved {Path(written).name}.\n\nOpen it in your browser now? "
+                                   "(Use the browser's Print > Save as PDF for a PDF copy.)"):
+                webbrowser.open(Path(written).as_uri())
+        except Exception as e:
+            messagebox.showerror("Export failed", str(e))
+
+    def open_settings_dialog(self) -> None:
+        cfg = self.config
+        out_cfg = cfg.setdefault("output", {})
+        ins_cfg = out_cfg.setdefault("insights_events", {})
+        scan_cfg = cfg.setdefault("scan_options", {})
+        upd_cfg = cfg.setdefault("updates", {})
+
+        win = tk.Toplevel(self.root)
+        win.title("Settings")
+        win.transient(self.root)
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="Save reports in:").grid(row=0, column=0, sticky="w", pady=3)
+        out_var = tk.StringVar(value=out_cfg.get("directory", "./output"))
+        ttk.Entry(frame, textvariable=out_var, width=52).grid(row=0, column=1, sticky="we", pady=3)
+        ttk.Button(frame, text="Browse...", command=lambda: (
+            lambda d: out_var.set(d) if d else None)(filedialog.askdirectory(initialdir=str(self.output_dir)))
+        ).grid(row=0, column=2, padx=4)
+        ttk.Label(frame, text=f"Currently: {self.output_dir}", foreground="#666").grid(
+            row=1, column=1, sticky="w")
+
+        ins_enabled = tk.BooleanVar(value=bool(ins_cfg.get("enabled", True)))
+        ttk.Checkbutton(frame, text="Write Insights events (per-port NDJSON)", variable=ins_enabled).grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(10, 3))
+        ttk.Label(frame, text="Insights feed file:").grid(row=3, column=0, sticky="w", pady=3)
+        ins_path = tk.StringVar(value=ins_cfg.get("path", "") or "")
+        ttk.Entry(frame, textvariable=ins_path, width=52).grid(row=3, column=1, sticky="we", pady=3)
+        ttk.Button(frame, text="Browse...", command=lambda: (
+            lambda f: ins_path.set(f) if f else None)(filedialog.asksaveasfilename(
+                title="Insights feed file the collector tails", defaultextension=".ndjson",
+                initialfile="nmap_chat.ndjson"))).grid(row=3, column=2, padx=4)
+        ttk.Label(frame, text="The fixed file the Insights collector tails; events are appended after every "
+                              "scan. Leave empty to only keep per-scan files.", foreground="#666",
+                  wraplength=self.px(430), justify="left").grid(row=4, column=1, sticky="w")
+
+        ext_var = tk.BooleanVar(value=bool(scan_cfg.get("external_scripts", False)))
+        ttk.Checkbutton(frame, text="Allow nmap scripts that contact third-party services (vulners CVE "
+                                    "lookups - sends detected software versions to vulners.com)",
+                        variable=ext_var).grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 3))
+        upd_var = tk.BooleanVar(value=bool(upd_cfg.get("check_on_startup", True)))
+        ttk.Checkbutton(frame, text="Check for updates when the app starts", variable=upd_var).grid(
+            row=6, column=0, columnspan=3, sticky="w", pady=3)
+
+        ttk.Label(frame, text=f"Saved to: {config_write_path()}", foreground="#666").grid(
+            row=7, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=8, column=0, columnspan=3, sticky="e", pady=(12, 0))
+
+        def save() -> None:
+            out_cfg["directory"] = out_var.get().strip() or "./output"
+            ins_cfg["enabled"] = ins_enabled.get()
+            ins_cfg["path"] = ins_path.get().strip()
+            scan_cfg["external_scripts"] = ext_var.get()
+            upd_cfg["check_on_startup"] = upd_var.get()
+            try:
+                written = save_config(cfg)
+            except OSError as e:
+                messagebox.showerror("Couldn't save settings", f"{e}\n\n(Administrator rights are needed "
+                                     "to write the installed settings file.)")
+                return
+            self.output_dir = resolve_output_dir(out_cfg["directory"])
+            self._log(f"[+] Settings saved to {written}. Reports now go to {self.output_dir}", "ok")
+            self.refresh_history()
+            win.destroy()
+
+        ttk.Button(btn_row, text="Cancel", command=win.destroy).pack(side="right", padx=4)
+        ttk.Button(btn_row, text="Save", command=save).pack(side="right")
+        frame.columnconfigure(1, weight=1)
+        win.grab_set()
+
+    def open_schedule_dialog(self) -> None:
+        current = scheduled.current_job()
+        win = tk.Toplevel(self.root)
+        win.title("Scheduled Scan")
+        win.transient(self.root)
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Run a scan automatically and record what changed since the previous one.\n"
+                              "The report, an HTML copy, a _changes.txt and the Insights events are written "
+                              "to the output folder each time.", wraplength=self.px(460), justify="left").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        status = ("Current: " + current.describe()) if current else "No scheduled scan is set up."
+        ttk.Label(frame, text=status, foreground="#2b6cb0").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        ttk.Label(frame, text="Target:").grid(row=2, column=0, sticky="w", pady=3)
+        target_var = tk.StringVar(value=(current.target if current and current.target != "(unknown)"
+                                         else self.target_var.get().strip()))
+        ttk.Entry(frame, textvariable=target_var, width=36).grid(row=2, column=1, sticky="we", pady=3)
+        ttk.Label(frame, text="Mode:").grid(row=3, column=0, sticky="w", pady=3)
+        mode_var = tk.StringVar(value=current.mode if current else "full")
+        ttk.Combobox(frame, textvariable=mode_var, values=list(scheduled.MODES), state="readonly",
+                     width=10).grid(row=3, column=1, sticky="w", pady=3)
+        ttk.Label(frame, text="Day:").grid(row=4, column=0, sticky="w", pady=3)
+        days = ["Every day"] + scheduled.WEEKDAYS
+        day_var = tk.StringVar(value=days[(current.weekday + 1) if current else 7])
+        ttk.Combobox(frame, textvariable=day_var, values=days, state="readonly", width=12).grid(
+            row=4, column=1, sticky="w", pady=3)
+        ttk.Label(frame, text="Time (24h):").grid(row=5, column=0, sticky="w", pady=3)
+        time_var = tk.StringVar(value=f"{current.hour:02d}:{current.minute:02d}" if current else "02:00")
+        ttk.Entry(frame, textvariable=time_var, width=8).grid(row=5, column=1, sticky="w", pady=3)
+        ttk.Label(frame, text="Runs with full rights whether or not anyone is logged in. Needs the installed "
+                              "copy of NetworkLens (not the portable exe).", foreground="#666",
+                  wraplength=self.px(460), justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
+
+        def apply() -> None:
+            m = re.match(r"^(\d{1,2}):(\d{2})$", time_var.get().strip())
+            if not m or not (0 <= int(m.group(1)) < 24 and 0 <= int(m.group(2)) < 60):
+                messagebox.showwarning("Time", "Enter the time as HH:MM, e.g. 02:00")
+                return
+            if not target_var.get().strip():
+                messagebox.showwarning("Target", "Enter the network to scan.")
+                return
+            job = scheduled.ScanJob(target=target_var.get().strip(), mode=mode_var.get(),
+                                    weekday=days.index(day_var.get()) - 1,
+                                    hour=int(m.group(1)), minute=int(m.group(2)),
+                                    output_dir=str(self.output_dir))
+            ok, msg = scheduled.create(job)
+            self._log(("[+] " if ok else "[!] ") + msg, "ok" if ok else "error")
+            if ok:
+                messagebox.showinfo("Scheduled", msg)
+                win.destroy()
+            else:
+                messagebox.showerror("Couldn't schedule", msg)
+
+        def remove() -> None:
+            ok, msg = scheduled.remove()
+            self._log(("[+] " if ok else "[!] ") + msg, "ok" if ok else "error")
+            if ok:
+                win.destroy()
+            else:
+                messagebox.showerror("Couldn't remove", msg)
+
+        ttk.Button(btn_row, text="Close", command=win.destroy).pack(side="right", padx=4)
+        ttk.Button(btn_row, text="Remove scheduled scan", command=remove,
+                   state="normal" if current else "disabled").pack(side="right", padx=4)
+        ttk.Button(btn_row, text="Save schedule", command=apply).pack(side="right")
+        frame.columnconfigure(1, weight=1)
+        win.grab_set()
+
+    def refresh_history(self) -> None:
+        """Re-list the reports in the output folder (newest first)."""
+        for item in self.hist_tree.get_children():
+            self.hist_tree.delete(item)
+        folder = self.output_dir
+        if not folder.is_dir():
+            self.hist_note_var.set(f"No reports yet. They will appear here, from {folder}")
+            return
+        rows = []
+        for p in folder.glob("scan_*.json"):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                meta = data.get("scan_metadata", {}) if isinstance(data, dict) else {}
+                if "hosts" not in data:
+                    continue
+                risk = (data.get("ai_analysis_summary") or {}).get("overall_risk", "")
+                when = self._local_time(meta.get("timestamp") or "") or (meta.get("scan_start") or "")
+                kind = "discovery" if meta.get("scan_type") == "discovery" else "scan"
+                if meta.get("partial"):
+                    kind += " (partial)"
+                rows.append((meta.get("timestamp", ""), when, meta.get("target", ""), kind,
+                             meta.get("hosts_up", ""), str(risk).upper(), p))
+            except (OSError, ValueError):
+                continue
+        rows.sort(reverse=True)
+        for _ts, when, target, kind, hosts, risk, p in rows:
+            self.hist_tree.insert("", "end", values=(when, target, kind, hosts, risk, p.name),
+                                  tags=(risk.lower(),))
+        for level, color in (("critical", "#b00020"), ("high", "#a25600"), ("medium", "#856100"),
+                             ("low", "#0a7d2c")):
+            self.hist_tree.tag_configure(level, foreground=color)
+        self.hist_note_var.set(f"{len(rows)} report(s) in {folder}")
+
+    @staticmethod
+    def _local_time(iso_utc: str) -> str:
+        """An ISO timestamp from a report, shown in local time."""
+        try:
+            return datetime.fromisoformat(iso_utc).astimezone().strftime("%Y-%m-%d %H:%M")
+        except (ValueError, TypeError):
+            return ""
+
+    def _selected_history_path(self) -> Optional[Path]:
+        sel = self.hist_tree.selection()
+        if not sel:
+            messagebox.showinfo("History", "Select a report in the list first.")
+            return None
+        return self.output_dir / self.hist_tree.item(sel[0], "values")[5]
+
+    def open_history_item(self) -> None:
+        path = self._selected_history_path()
+        if path:
+            self._load_report_file(str(path))
+
+    def compare_history_item(self) -> None:
+        if not self.last_output:
+            messagebox.showinfo("History", "Run or open a scan first; it is compared against the selected report.")
+            return
+        path = self._selected_history_path()
+        if path:
+            self._compare_with_file(str(path))
+
+    def export_history_item(self) -> None:
+        path = self._selected_history_path()
+        if not path:
+            return
+        try:
+            report = load_report(str(path))
+        except ValueError as e:
+            messagebox.showerror("Couldn't open report", str(e))
+            return
+        out = filedialog.asksaveasfilename(defaultextension=".html", initialdir=str(self.output_dir),
+                                           initialfile=path.with_suffix(".html").name,
+                                           filetypes=[("HTML report", "*.html")])
+        if out:
+            target = report.get("scan_metadata", {}).get("target", "scan")
+            written = report_html.write_html_report(report, out, title=f"Network Scan Report - {target}")
+            self._log(f"[+] HTML report saved to {written}", "ok")
+
+    def save_support_info(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="Save support info", defaultextension=".zip",
+            initialfile=f"networklens-support-{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
+            filetypes=[("Zip archive", "*.zip")])
+        if not path:
+            return
+        try:
+            written = diagnostics.write_bundle(path, self.config,
+                                               extra_text={"live_log.txt": self.log.get("1.0", "end")})
+            self._log(f"[+] Support info saved to {written} - send this file with your problem report.", "ok")
+            messagebox.showinfo("Support info saved",
+                                f"Saved {Path(written).name}.\n\nIt contains version and environment details, "
+                                "the settings in use, the launch log, this window's log, and the metadata of "
+                                "recent scans - no scan results.")
+        except Exception as e:
+            messagebox.showerror("Couldn't save", str(e))
+
     # ---------- File actions ----------
 
     def export_inventory_csv(self) -> None:
@@ -1443,6 +1935,14 @@ def launch() -> int:
     handed_over = relaunch_elevated()
     if handed_over is not None:
         return handed_over
+    if platform.system() == "Windows":
+        # Per-monitor DPI awareness: otherwise Windows bitmap-stretches the
+        # window on 125-200% laptop screens and everything is blurry.
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
     try:
         root = tk.Tk()
     except tk.TclError as e:
