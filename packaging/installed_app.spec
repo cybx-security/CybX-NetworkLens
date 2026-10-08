@@ -24,6 +24,8 @@
 import os
 import sys
 
+from PyInstaller.utils.hooks import collect_all
+
 ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
 SRC = os.path.join(ROOT, 'src')
 IS_WINDOWS = sys.platform == 'win32'
@@ -37,6 +39,12 @@ datas = [
     (os.path.join(ROOT, 'packaging', 'icon'), os.path.join('packaging', 'icon')),
 ]
 hiddenimports = ['gui', 'local_analyzer', 'selftest']
+
+# The Sun Valley ttk theme is Tcl files inside the sv_ttk package; PyInstaller
+# only finds the Python side on its own.
+_sv_datas, _sv_binaries, _sv_hidden = collect_all('sv_ttk')
+datas += _sv_datas
+hiddenimports += _sv_hidden
 
 
 def analyse(script):

@@ -77,6 +77,9 @@ def load_config(config_path: Optional[str] = None, log=print) -> dict:
         },
         "updates": {
             "check_on_startup": True
+        },
+        "ui": {
+            "theme": "system"
         }
     }
 

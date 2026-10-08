@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 try:
@@ -50,6 +51,7 @@ try:
     import report_html
     import scheduled
     import diagnostics
+    import ui_theme
 except ImportError:
     from .scanner import (build_nmap_command, check_privileges, get_nmap_version,
                           nmap_environment_warnings, exit_code_hint, rate_limit_warning,
@@ -75,6 +77,7 @@ except ImportError:
     from . import report_html
     from . import scheduled
     from . import diagnostics
+    from . import ui_theme
 
 
 PROGRESS_RE = re.compile(r"About ([\d.]+)% done", re.IGNORECASE)
@@ -121,6 +124,8 @@ class ScannerGUI:
         self.output_dir = resolve_output_dir(self.config.get("output", {}).get("directory"))
 
         self._set_window_icon()
+        self.palette = ui_theme.PALETTES["light"]
+        self._apply_theme()
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         for msg in config_messages:
@@ -209,156 +214,211 @@ class ScannerGUI:
         except Exception:
             pass
 
+    def _mono(self, size: int, *extra) -> tuple:
+        family = "Menlo" if platform.system() == "Darwin" else ("Consolas" if platform.system() == "Windows" else "DejaVu Sans Mono")
+        return (family, size) + extra
+
+    def _apply_theme(self, preference: Optional[str] = None) -> None:
+        """Switch light/dark and recolour the classic tk widgets to match."""
+        pref = preference or self.config.get("ui", {}).get("theme", "system")
+        self.theme_name = ui_theme.resolve(pref)
+        self.palette = ui_theme.apply(self.root, self.theme_name)
+        pal = self.palette
+        for widget in getattr(self, "_text_widgets", []):
+            try:
+                widget.configure(background=pal["card"], foreground=pal["fg"],
+                                 insertbackground=pal["fg"], selectbackground=pal["select"],
+                                 highlightthickness=0, borderwidth=0, relief="flat")
+            except tk.TclError:
+                pass
+        if hasattr(self, "log"):
+            for tag in ("info", "warn", "error", "ok", "cmd"):
+                self.log.tag_configure(tag, foreground=pal[tag])
+            for tag in ("critical", "high", "medium", "low", "info"):
+                self.tree.tag_configure(tag, foreground=pal[tag])
+                self.hist_tree.tag_configure(tag, foreground=pal[tag])
+            for tag in ("add", "remove", "change", "ok", "info"):
+                self.diff_text.tag_configure(tag, foreground=pal[tag])
+            self.diff_text.tag_configure("header", foreground=pal["fg"])
+            for lbl in getattr(self, "_muted_labels", []):
+                try:
+                    lbl.configure(foreground=pal["muted"])
+                except tk.TclError:
+                    pass
+            for lbl in getattr(self, "_accent_labels", []):
+                try:
+                    lbl.configure(foreground=pal["accent"])
+                except tk.TclError:
+                    pass
+
+    def _muted(self, parent, **kw) -> ttk.Label:
+        lbl = ttk.Label(parent, foreground=self.palette["muted"], **kw)
+        self._muted_labels.append(lbl)
+        return lbl
+
     def _build_ui(self) -> None:
-        style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-
-        # Scan config
-        form = ttk.LabelFrame(self.root, text="Scan Configuration", padding=10)
-        form.pack(fill="x", padx=10, pady=(10, 5))
-
+        self._text_widgets: list = []
+        self._muted_labels: list = []
+        self._accent_labels: list = []
         self._build_menu()
+        base = tkfont.nametofont("TkDefaultFont")
+        self.font_title = tkfont.Font(family=base.actual("family"), size=base.actual("size") + 7, weight="bold")
+        self.font_heading = tkfont.Font(family=base.actual("family"), size=base.actual("size") + 2, weight="bold")
+        self.font_small = tkfont.Font(family=base.actual("family"), size=max(9, base.actual("size") - 1))
+        pad = self.px(12)
 
-        ttk.Label(form, text="Target:").grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        # ---- Header: who we are, and whether this run has full rights ----
+        header = ttk.Frame(self.root, padding=(pad + 4, pad, pad + 4, 4))
+        header.pack(fill="x")
+        title_box = ttk.Frame(header)
+        title_box.pack(side="left")
+        ttk.Label(title_box, text="CybX NetworkLens", font=self.font_title).pack(anchor="w")
+        self._muted(title_box, text=f"Version {__version__}  ·  find devices, open ports and risky services",
+                    font=self.font_small).pack(anchor="w")
+        header_right = ttk.Frame(header)
+        header_right.pack(side="right")
+        self.priv_var = tk.StringVar(value="")
+        self.priv_label = ttk.Label(header_right, textvariable=self.priv_var, font=self.font_small)
+        self.priv_label.pack(side="right", padx=(8, 0))
+        ttk.Button(header_right, text="Settings", command=self.open_settings_dialog).pack(side="right", padx=4)
+        self.update_btn = ttk.Button(header_right, text="Check for Updates", command=self.check_for_updates)
+        self.update_btn.pack(side="right", padx=4)
+
+        # ---- Body: setup card on the left, results on the right ----
+        body = ttk.Frame(self.root, padding=(pad, 4, pad, 0))
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        card = ttk.Frame(body, style="Card.TFrame", padding=pad + 2)
+        card.grid(row=0, column=0, sticky="nsw", padx=(0, pad))
+        form = card  # the attribute name the rest of the class uses
+        ttk.Label(form, text="Scan setup", font=self.font_heading).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        ttk.Label(form, text="Target").grid(row=1, column=0, sticky="w", pady=(4, 2))
         self.target_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.target_var).grid(row=0, column=1, sticky="we", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.target_var, width=30).grid(row=1, column=1, sticky="we", pady=(4, 2))
         target_side = ttk.Frame(form)
-        target_side.grid(row=0, column=2, sticky="w", padx=2)
-        self.my_network_btn = ttk.Button(target_side, text="Scan my network", command=self.use_my_network,
+        target_side.grid(row=2, column=0, columnspan=2, sticky="we")
+        self.my_network_btn = ttk.Button(target_side, text="Use my network", command=self.use_my_network,
                                          state="disabled")
         self.my_network_btn.pack(side="left")
         self.my_network_var = tk.StringVar(value="finding your network...")
-        ttk.Label(target_side, textvariable=self.my_network_var, foreground="#666").pack(side="left", padx=6)
+        self._muted(target_side, textvariable=self.my_network_var, font=self.font_small,
+                    wraplength=self.px(220), justify="left").pack(side="left", padx=8)
 
-        ttk.Label(form, text="Ports:").grid(row=1, column=0, sticky="w", padx=2, pady=2)
-        self.ports_var = tk.StringVar()
-        self.ports_entry = ttk.Entry(form, textvariable=self.ports_var)
-        self.ports_entry.grid(row=1, column=1, sticky="we", padx=4, pady=2)
-        ttk.Label(form, text="Optional — e.g. 22,80,443 or 1-1000 (blank = recommended set)",
-                  foreground="#666").grid(row=1, column=2, sticky="w", padx=2)
-
-        ttk.Label(form, text="Exclude:").grid(row=2, column=0, sticky="w", padx=2, pady=2)
-        self.exclude_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.exclude_var).grid(row=2, column=1, sticky="we", padx=4, pady=2)
-        ttk.Label(form, text="Optional — comma-separated IPs/hosts to skip (e.g. 192.168.1.5, 192.168.1.10)",
-                  foreground="#666").grid(row=2, column=2, sticky="w", padx=2)
-
-        # Scan mode (Quick vs Full) — a preset that drives the detailed toggles below.
+        # Scan mode
+        ttk.Label(form, text="Mode").grid(row=3, column=0, sticky="w", pady=(12, 2))
         mode_frame = ttk.Frame(form)
-        mode_frame.grid(row=3, column=0, columnspan=3, sticky="we", pady=(8, 0))
-        ttk.Label(mode_frame, text="Scan mode:").pack(side="left", padx=(2, 6))
+        mode_frame.grid(row=3, column=1, sticky="w", pady=(12, 2))
         self.mode_var = tk.StringVar(value="full")
-        ttk.Radiobutton(mode_frame, text="Discover", variable=self.mode_var, value="discover",
-                        command=self._apply_mode).pack(side="left")
-        ttk.Radiobutton(mode_frame, text="Quick", variable=self.mode_var, value="quick",
-                        command=self._apply_mode).pack(side="left", padx=(8, 0))
-        ttk.Radiobutton(mode_frame, text="Gentle", variable=self.mode_var, value="gentle",
-                        command=self._apply_mode).pack(side="left", padx=(8, 0))
-        ttk.Radiobutton(mode_frame, text="Full", variable=self.mode_var, value="full",
-                        command=self._apply_mode).pack(side="left", padx=(8, 0))
+        for i, (value, label) in enumerate((("discover", "Discover"), ("quick", "Quick"),
+                                            ("gentle", "Gentle"), ("full", "Full"))):
+            ttk.Radiobutton(mode_frame, text=label, variable=self.mode_var, value=value,
+                            command=self._apply_mode).pack(side="left", padx=(0 if i == 0 else 10, 0))
         self.mode_hint_var = tk.StringVar()
-        ttk.Label(mode_frame, textvariable=self.mode_hint_var,
-                  foreground="#666").pack(side="left", padx=12)
+        self._muted(form, textvariable=self.mode_hint_var, font=self.font_small,
+                    wraplength=self.px(300), justify="left").grid(row=4, column=0, columnspan=2, sticky="w")
 
-        # Detailed toggles (advanced) — preset by the scan mode, override as needed.
+        # Options as switches
+        ttk.Label(form, text="Options", font=self.font_heading).grid(row=5, column=0, columnspan=2, sticky="w", pady=(14, 4))
         opts = ttk.Frame(form)
-        opts.grid(row=4, column=0, columnspan=3, sticky="we", pady=(4, 0))
+        opts.grid(row=6, column=0, columnspan=2, sticky="we")
         self.os_var = tk.BooleanVar(value=True)
         self.vuln_var = tk.BooleanVar(value=True)
         self.udp_var = tk.BooleanVar(value=True)
-        self.os_cb = ttk.Checkbutton(opts, text="OS Detection", variable=self.os_var)
-        self.os_cb.pack(side="left")
-        self.vuln_cb = ttk.Checkbutton(opts, text="Vulnerability Scripts", variable=self.vuln_var)
-        self.vuln_cb.pack(side="left", padx=12)
-        self.udp_cb = ttk.Checkbutton(opts, text="UDP (SNMP/IPMI/TFTP)", variable=self.udp_var)
-        self.udp_cb.pack(side="left")
-        ttk.Label(opts, text="    Timing:").pack(side="left", padx=(20, 2))
+        self.os_cb = ttk.Checkbutton(opts, text="OS detection", variable=self.os_var, style="Switch.TCheckbutton")
+        self.os_cb.grid(row=0, column=0, sticky="w", pady=2)
+        self.vuln_cb = ttk.Checkbutton(opts, text="Vulnerability scripts", variable=self.vuln_var, style="Switch.TCheckbutton")
+        self.vuln_cb.grid(row=1, column=0, sticky="w", pady=2)
+        self.udp_cb = ttk.Checkbutton(opts, text="UDP services (SNMP, IPMI, TFTP)", variable=self.udp_var, style="Switch.TCheckbutton")
+        self.udp_cb.grid(row=2, column=0, sticky="w", pady=2)
+
+        adv = ttk.Frame(form)
+        adv.grid(row=7, column=0, columnspan=2, sticky="we", pady=(8, 0))
+        adv.columnconfigure(1, weight=1)
+        ttk.Label(adv, text="Ports").grid(row=0, column=0, sticky="w", pady=2)
+        self.ports_var = tk.StringVar()
+        self.ports_entry = ttk.Entry(adv, textvariable=self.ports_var)
+        self.ports_entry.grid(row=0, column=1, sticky="we", padx=(8, 0), pady=2)
+        ttk.Label(adv, text="Exclude").grid(row=1, column=0, sticky="w", pady=2)
+        self.exclude_var = tk.StringVar()
+        ttk.Entry(adv, textvariable=self.exclude_var).grid(row=1, column=1, sticky="we", padx=(8, 0), pady=2)
+        ttk.Label(adv, text="Timing").grid(row=2, column=0, sticky="w", pady=2)
+        timing_row = ttk.Frame(adv)
+        timing_row.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=2)
         self.timing_var = tk.IntVar(value=4)
-        self.timing_combo = ttk.Combobox(opts, textvariable=self.timing_var, values=[0, 1, 2, 3, 4, 5],
-                                         width=4, state="readonly")
+        self.timing_combo = ttk.Combobox(timing_row, textvariable=self.timing_var, values=[0, 1, 2, 3, 4, 5],
+                                         width=3, state="readonly")
         self.timing_combo.pack(side="left")
-        ttk.Label(opts, text="(0=slow/quiet, 5=fast/loud)", foreground="#666").pack(side="left", padx=4)
-
-        # Rate cap — the brake for fragile networks. Preset by Gentle mode,
-        # editable in any mode.
-        rate = ttk.Frame(form)
-        rate.grid(row=5, column=0, columnspan=3, sticky="we", pady=(4, 0))
-        ttk.Label(rate, text="Max rate:").pack(side="left", padx=(2, 6))
+        self._muted(timing_row, text="0 = slow & quiet, 5 = fast & loud", font=self.font_small).pack(side="left", padx=6)
+        ttk.Label(adv, text="Max rate").grid(row=3, column=0, sticky="w", pady=2)
+        rate_row = ttk.Frame(adv)
+        rate_row.grid(row=3, column=1, sticky="w", padx=(8, 0), pady=2)
         self.max_rate_var = tk.StringVar()
-        ttk.Entry(rate, textvariable=self.max_rate_var, width=8).pack(side="left")
-        ttk.Label(rate, text="packets/sec — blank = no limit. Lower this for fragile gear "
-                             "(PLCs, medical devices, old printers).",
-                  foreground="#666").pack(side="left", padx=6)
+        ttk.Entry(rate_row, textvariable=self.max_rate_var, width=7).pack(side="left")
+        self._muted(rate_row, text="packets/sec, blank = no limit", font=self.font_small).pack(side="left", padx=6)
+        self._muted(form, text="Ports: blank = recommended set, e.g. 22,80,443 or 1-1000. "
+                               "Exclude: hosts to skip, e.g. 10.0.0.5, 10.0.0.9. "
+                               "Lower the rate for fragile gear (PLCs, medical devices, printers).",
+                    font=self.font_small, wraplength=self.px(300), justify="left").grid(
+            row=8, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        # Expected duration, so a /16 Full scan is a decision, not a surprise.
+        # Expected duration + the big buttons
         self.estimate_var = tk.StringVar(value="")
-        ttk.Label(form, textvariable=self.estimate_var, foreground="#2b6cb0").grid(
-            row=6, column=0, columnspan=3, sticky="w", padx=2, pady=(6, 0))
+        est = ttk.Label(form, textvariable=self.estimate_var, wraplength=self.px(300), justify="left",
+                        foreground=self.palette["accent"])
+        self._accent_labels.append(est)
+        est.grid(row=9, column=0, columnspan=2, sticky="w", pady=(14, 6))
         for var in (self.target_var, self.mode_var, self.udp_var, self.max_rate_var, self.ports_var):
             var.trace_add("write", lambda *_: self._update_estimate())
-
+        btns = ttk.Frame(form)
+        btns.grid(row=10, column=0, columnspan=2, sticky="we", pady=(4, 0))
+        self.start_btn = ttk.Button(btns, text="Start scan", style="Accent.TButton", command=self.start_scan)
+        self.start_btn.pack(side="left", fill="x", expand=True)
+        self.stop_btn = ttk.Button(btns, text="Stop", command=self.stop_scan, state="disabled")
+        self.stop_btn.pack(side="left", padx=(8, 0))
         form.columnconfigure(1, weight=1)
         self._apply_mode()
 
-        # Buttons: the everyday actions. Everything else lives in the menus.
-        btns = ttk.Frame(self.root)
-        btns.pack(fill="x", padx=10, pady=5)
-        self.start_btn = ttk.Button(btns, text="▶  Start Scan", command=self.start_scan)
-        self.start_btn.pack(side="left", padx=2)
-        self.stop_btn = ttk.Button(btns, text="■  Stop", command=self.stop_scan, state="disabled")
-        self.stop_btn.pack(side="left", padx=2)
-        self.save_btn = ttk.Button(btns, text="Save Report...", command=self.save_report, state="disabled")
-        self.save_btn.pack(side="left", padx=(12, 2))
-        self.export_html_btn = ttk.Button(btns, text="Export Report (HTML)...", command=self.export_html_report,
+        # ---- Right: results toolbar + tabs ----
+        right = ttk.Frame(body)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.rowconfigure(1, weight=1)
+        right.columnconfigure(0, weight=1)
+        toolbar = ttk.Frame(right)
+        toolbar.grid(row=0, column=0, sticky="we", pady=(0, 6))
+        self.save_btn = ttk.Button(toolbar, text="Save report", command=self.save_report, state="disabled")
+        self.save_btn.pack(side="left")
+        self.export_html_btn = ttk.Button(toolbar, text="Export HTML report", command=self.export_html_report,
                                           state="disabled")
-        self.export_html_btn.pack(side="left", padx=2)
+        self.export_html_btn.pack(side="left", padx=6)
         self._register("save", self.save_btn, self.export_html_btn)
-        ttk.Button(btns, text="Open Output Folder", command=self.open_output_folder).pack(side="left", padx=2)
-        ttk.Button(btns, text="Quit", command=self.on_close).pack(side="right", padx=2)
-        self.update_btn = ttk.Button(btns, text="Check for Updates...", command=self.check_for_updates)
-        self.update_btn.pack(side="right", padx=2)
-        ttk.Button(btns, text="Settings...", command=self.open_settings_dialog).pack(side="right", padx=2)
+        ttk.Button(toolbar, text="Open output folder", command=self.open_output_folder).pack(side="left")
+        ttk.Button(toolbar, text="Open report...", command=self.open_report).pack(side="right")
 
-        # Progress
-        prog = ttk.LabelFrame(self.root, text="Progress", padding=8)
-        prog.pack(fill="x", padx=10, pady=5)
-        self.progress = ttk.Progressbar(prog, mode="indeterminate")
-        self.progress.pack(fill="x")
-        self.status_var = tk.StringVar(value="Idle. Configure a target and click Start.")
-        ttk.Label(prog, textvariable=self.status_var, foreground="#333").pack(anchor="w", pady=(4, 0))
-
-        # Notebook
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+        nb = ttk.Notebook(right)
+        nb.grid(row=1, column=0, sticky="nsew")
         self.nb = nb
 
         # Live log
-        self.log = scrolledtext.ScrolledText(nb, wrap="word", height=18,
-                                             font=("Menlo", 11) if platform.system() == "Darwin" else ("Consolas", 10))
-        self.log.tag_configure("info", foreground="#222")
-        self.log.tag_configure("warn", foreground="#a25600")
-        self.log.tag_configure("error", foreground="#b00020")
-        self.log.tag_configure("ok", foreground="#0a7d2c")
-        self.log.tag_configure("cmd", foreground="#333", font=("Menlo", 10, "italic") if platform.system() == "Darwin" else ("Consolas", 9, "italic"))
+        log_frame = ttk.Frame(nb, padding=6)
+        self.log = scrolledtext.ScrolledText(log_frame, wrap="word", height=18, font=self._mono(11 if platform.system() == "Darwin" else 10))
+        self.log.pack(fill="both", expand=True)
+        self._text_widgets.append(self.log)
+        self.log.tag_configure("cmd", font=self._mono(10 if platform.system() == "Darwin" else 9, "italic"))
         self.log.configure(state="disabled")
-        nb.add(self.log, text="Live Log")
+        nb.add(log_frame, text="  Live log  ")
 
         # Inventory — flat device table for on-site network audits
-        inv_frame = ttk.Frame(nb)
-        nb.add(inv_frame, text="Inventory")
-
+        inv_frame = ttk.Frame(nb, padding=6)
+        self.inv_frame = inv_frame
+        nb.add(inv_frame, text="  Inventory  ")
         inv_cols = ("ip", "hostname", "mac", "vendor", "ports", "os")
         self.inv_tree = ttk.Treeview(inv_frame, columns=inv_cols, show="headings")
         headings = {
-            "ip": ("IP Address", 130),
-            "hostname": ("Hostname", 160),
-            "mac": ("MAC Address", 150),
-            "vendor": ("Vendor", 140),
-            "ports": ("Open Ports (protocol/service)", 320),
-            "os": ("OS Guess", 160),
+            "ip": ("IP address", 130), "hostname": ("Hostname", 160), "mac": ("MAC address", 150),
+            "vendor": ("Vendor", 140), "ports": ("Open ports (protocol/service)", 320), "os": ("OS guess", 160),
         }
         for col, (title, width) in headings.items():
             self.inv_tree.heading(col, text=title)
@@ -366,100 +426,95 @@ class ScannerGUI:
         inv_vsb = ttk.Scrollbar(inv_frame, orient="vertical", command=self.inv_tree.yview)
         inv_hsb = ttk.Scrollbar(inv_frame, orient="horizontal", command=self.inv_tree.xview)
         self.inv_tree.configure(yscrollcommand=inv_vsb.set, xscrollcommand=inv_hsb.set)
-        self.inv_tree.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        inv_vsb.grid(row=0, column=1, sticky="ns", pady=(8, 0))
-        inv_hsb.grid(row=1, column=0, sticky="we", padx=(8, 0))
+        self.inv_tree.grid(row=0, column=0, sticky="nsew")
+        inv_vsb.grid(row=0, column=1, sticky="ns")
+        inv_hsb.grid(row=1, column=0, sticky="we")
         inv_frame.rowconfigure(0, weight=1)
         inv_frame.columnconfigure(0, weight=1)
-
-        # View filter shared by Results and Inventory: hide live hosts that
-        # have no confirmed-open ports. Inert on discovery scans (no ports
-        # were probed, so it would hide everything).
         self.only_found_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(inv_frame, text="Only show hosts with open ports",
-                        variable=self.only_found_var, command=self._refilter).grid(
-            row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 0))
-
+        ttk.Checkbutton(inv_frame, text="Only show hosts with open ports", variable=self.only_found_var,
+                        command=self._refilter, style="Switch.TCheckbutton").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.inv_note_var = tk.StringVar(value="")
-        ttk.Label(inv_frame, textvariable=self.inv_note_var, foreground="#666").grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
+        self._muted(inv_frame, textvariable=self.inv_note_var, font=self.font_small, wraplength=self.px(600),
+                    justify="left").grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # Results
-        results_frame = ttk.Frame(nb)
-        nb.add(results_frame, text="Results")
-
-        self.summary_box = tk.Text(results_frame, height=8, wrap="word",
-                                   relief="flat", borderwidth=0, background=self.root.cget("background"))
+        results_frame = ttk.Frame(nb, padding=6)
+        nb.add(results_frame, text="  Results  ")
+        self.summary_box = tk.Text(results_frame, height=8, wrap="word", font=base)
         self.summary_box.insert("1.0", "No scan run yet.")
         self.summary_box.configure(state="disabled")
-        self.summary_box.pack(fill="x", padx=8, pady=8)
-
-        ttk.Checkbutton(results_frame, text="Only show hosts with open ports",
-                        variable=self.only_found_var, command=self._refilter).pack(
-            anchor="w", padx=8, pady=(0, 4))
-
+        self.summary_box.pack(fill="x", pady=(0, 6))
+        self._text_widgets.append(self.summary_box)
+        ttk.Checkbutton(results_frame, text="Only show hosts with open ports", variable=self.only_found_var,
+                        command=self._refilter, style="Switch.TCheckbutton").pack(anchor="w", pady=(0, 6))
         tree_wrap = ttk.Frame(results_frame)
-        tree_wrap.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-
+        tree_wrap.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(tree_wrap, columns=("detail",), show="tree headings")
         self.tree.heading("#0", text="Item")
-        self.tree.heading("detail", text="Detail / Risk")
+        self.tree.heading("detail", text="Detail / risk")
         self.tree.column("#0", width=self.px(420), stretch=True)
         self.tree.column("detail", width=self.px(420), stretch=True)
-        self.tree.tag_configure("critical", foreground="#b00020")
-        self.tree.tag_configure("high",     foreground="#a25600")
-        self.tree.tag_configure("medium",   foreground="#856100")
-        self.tree.tag_configure("low",      foreground="#0a7d2c")
-        self.tree.tag_configure("info",     foreground="#333")
         vsb = ttk.Scrollbar(tree_wrap, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
 
-        # JSON
-        self.json_text = scrolledtext.ScrolledText(nb, wrap="none", height=18,
-                                                   font=("Menlo", 10) if platform.system() == "Darwin" else ("Consolas", 9))
-        nb.add(self.json_text, text="Raw JSON")
-
         # Changes — diff against a previous scan of the same network
-        self.diff_text = scrolledtext.ScrolledText(nb, wrap="word", height=18,
-                                                   font=("Menlo", 11) if platform.system() == "Darwin" else ("Consolas", 10))
-        self.diff_text.tag_configure("header", font=("Menlo", 11, "bold") if platform.system() == "Darwin" else ("Consolas", 10, "bold"))
-        self.diff_text.tag_configure("add", foreground="#b00020")     # new exposure — needs attention
-        self.diff_text.tag_configure("remove", foreground="#666")     # gone — usually fine
-        self.diff_text.tag_configure("change", foreground="#a25600")
-        self.diff_text.tag_configure("ok", foreground="#0a7d2c")
-        self.diff_text.tag_configure("info", foreground="#333")
-        self.diff_text.insert("1.0", "Run or open a scan, then click \"Compare with Previous...\" "
-                                     "and pick an older report of the same network.")
+        diff_frame = ttk.Frame(nb, padding=6)
+        self.diff_frame = diff_frame
+        self.diff_text = scrolledtext.ScrolledText(diff_frame, wrap="word", height=18, font=self._mono(11 if platform.system() == "Darwin" else 10))
+        self.diff_text.pack(fill="both", expand=True)
+        self._text_widgets.append(self.diff_text)
+        self.diff_text.tag_configure("header", font=self._mono(11 if platform.system() == "Darwin" else 10, "bold"))
+        self.diff_text.insert("1.0", "Run or open a scan, then use Tools > Compare with Previous Scan "
+                                     "(or the History tab) and pick an older report of the same network.")
         self.diff_text.configure(state="disabled")
-        nb.add(self.diff_text, text="Changes")
+        nb.add(diff_frame, text="  Changes  ")
 
         # History — every report in the output folder, newest first
-        hist = ttk.Frame(nb)
-        nb.add(hist, text="History")
+        hist = ttk.Frame(nb, padding=6)
+        nb.add(hist, text="  History  ")
         hist_cols = ("when", "target", "type", "hosts", "risk", "file")
         self.hist_tree = ttk.Treeview(hist, columns=hist_cols, show="headings", selectmode="browse")
-        for col, title, width in (("when", "Scanned", 170), ("target", "Target", 170), ("type", "Type", 90),
+        for col, title, width in (("when", "Scanned", 150), ("target", "Target", 170), ("type", "Type", 100),
                                   ("hosts", "Hosts up", 70), ("risk", "Risk", 80), ("file", "File", 320)):
             self.hist_tree.heading(col, text=title)
             self.hist_tree.column(col, width=self.px(width), stretch=(col == "file"))
         hist_vsb = ttk.Scrollbar(hist, orient="vertical", command=self.hist_tree.yview)
         self.hist_tree.configure(yscrollcommand=hist_vsb.set)
-        self.hist_tree.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        hist_vsb.grid(row=0, column=1, sticky="ns", pady=(8, 0))
+        self.hist_tree.grid(row=0, column=0, sticky="nsew")
+        hist_vsb.grid(row=0, column=1, sticky="ns")
         hist.rowconfigure(0, weight=1)
         hist.columnconfigure(0, weight=1)
         hist_btns = ttk.Frame(hist)
-        hist_btns.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        ttk.Button(hist_btns, text="Refresh", command=self.refresh_history).pack(side="left", padx=2)
-        ttk.Button(hist_btns, text="Open", command=self.open_history_item).pack(side="left", padx=2)
-        ttk.Button(hist_btns, text="Compare current with selected", command=self.compare_history_item).pack(side="left", padx=2)
-        ttk.Button(hist_btns, text="Export selected as HTML...", command=self.export_history_item).pack(side="left", padx=2)
+        hist_btns.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Button(hist_btns, text="Open", command=self.open_history_item).pack(side="left")
+        ttk.Button(hist_btns, text="Compare current with selected", command=self.compare_history_item).pack(side="left", padx=6)
+        ttk.Button(hist_btns, text="Export as HTML...", command=self.export_history_item).pack(side="left")
+        ttk.Button(hist_btns, text="Refresh", command=self.refresh_history).pack(side="left", padx=6)
         self.hist_tree.bind("<Double-1>", lambda _e: self.open_history_item())
         self.hist_note_var = tk.StringVar(value="")
-        ttk.Label(hist, textvariable=self.hist_note_var, foreground="#666").grid(
-            row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+        self._muted(hist, textvariable=self.hist_note_var, font=self.font_small).grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        # Raw JSON
+        json_frame = ttk.Frame(nb, padding=6)
+        self.json_text = scrolledtext.ScrolledText(json_frame, wrap="none", height=18, font=self._mono(10 if platform.system() == "Darwin" else 9))
+        self.json_text.pack(fill="both", expand=True)
+        self._text_widgets.append(self.json_text)
+        nb.add(json_frame, text="  Raw JSON  ")
+
+        # ---- Status bar ----
+        status = ttk.Frame(self.root, padding=(pad, 6, pad, 8))
+        status.pack(fill="x", side="bottom")
+        self.progress = ttk.Progressbar(status, mode="indeterminate", length=self.px(220))
+        self.progress.pack(side="left")
+        self.status_var = tk.StringVar(value="Ready. Pick a target and click Start scan.")
+        ttk.Label(status, textvariable=self.status_var).pack(side="left", padx=10)
+
+        self._apply_theme()
 
     MODE_HINTS = {
         "discover": "Discover = ping sweep: who is alive. Seconds, no ports probed.",
@@ -550,9 +605,16 @@ class ScannerGUI:
                       "OS detection, SYN scan, and some vuln scripts will fail.", "warn")
             self._log("    Restart the app and enter your password when asked (macOS/Linux), "
                       "or use 'Run as Administrator' (Windows).", "warn")
+            self.priv_var.set("Limited rights - TCP-connect scans only")
+            self.priv_label.configure(foreground=self.palette["warn"])
         elif is_windows() and not is_npcap_installed():
             self._log("[!] Npcap is not installed, so scans fall back to TCP-connect mode: "
                       "no SYN scan, OS detection, or UDP until it is.", "warn")
+            self.priv_var.set("Npcap missing - TCP-connect scans only")
+            self.priv_label.configure(foreground=self.palette["warn"])
+        else:
+            self.priv_var.set("Full scan rights")
+            self.priv_label.configure(foreground=self.palette["ok"])
 
     def _detect_network(self) -> None:
         """Find the machine's own network in the background and offer it as the target."""
@@ -733,7 +795,7 @@ class ScannerGUI:
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
         self.progress.config(mode="indeterminate")
-        self.progress.start(10)
+        self.progress.start(40)
         self.status_var.set("Starting nmap...")
 
         self._show_environment()
@@ -1030,7 +1092,7 @@ class ScannerGUI:
                              else f"Scan complete. Overall risk: {overall}"))
         self._enable("save", True)
         self._enable("compare", True)
-        self.nb.select(1)  # jump to the Inventory tab
+        self.nb.select(self.inv_frame)
 
         # Auto-write both artifacts into the output directory so a scan is never
         # lost if the user forgets to click Save: the JSON report (what Open
@@ -1348,7 +1410,7 @@ class ScannerGUI:
         self.status_var.set(f"Loaded report: {loaded}")
         self._enable("save", True)
         self._enable("compare", True)
-        self.nb.select(1)  # jump to the Inventory tab
+        self.nb.select(self.inv_frame)
 
     def compare_with_previous(self) -> None:
         """Diff the current results against an older saved report."""
@@ -1373,7 +1435,7 @@ class ScannerGUI:
 
         comparison = diff_reports(previous, self.last_output)
         self._set_diff_text(format_diff_lines(comparison))
-        self.nb.select(self.diff_text)
+        self.nb.select(self.diff_frame)
 
         n_new = len(comparison["new_hosts"])
         n_missing = len(comparison["missing_hosts"])
@@ -1571,7 +1633,7 @@ class ScannerGUI:
         ttk.Button(frame, text="Browse...", command=lambda: (
             lambda d: out_var.set(d) if d else None)(filedialog.askdirectory(initialdir=str(self.output_dir)))
         ).grid(row=0, column=2, padx=4)
-        ttk.Label(frame, text=f"Currently: {self.output_dir}", foreground="#666").grid(
+        ttk.Label(frame, text=f"Currently: {self.output_dir}", foreground=self.palette["muted"]).grid(
             row=1, column=1, sticky="w")
 
         ins_enabled = tk.BooleanVar(value=bool(ins_cfg.get("enabled", True)))
@@ -1585,7 +1647,7 @@ class ScannerGUI:
                 title="Insights feed file the collector tails", defaultextension=".ndjson",
                 initialfile="nmap_chat.ndjson"))).grid(row=3, column=2, padx=4)
         ttk.Label(frame, text="The fixed file the Insights collector tails; events are appended after every "
-                              "scan. Leave empty to only keep per-scan files.", foreground="#666",
+                              "scan. Leave empty to only keep per-scan files.", foreground=self.palette["muted"],
                   wraplength=self.px(430), justify="left").grid(row=4, column=1, sticky="w")
 
         ext_var = tk.BooleanVar(value=bool(scan_cfg.get("external_scripts", False)))
@@ -1595,11 +1657,18 @@ class ScannerGUI:
         upd_var = tk.BooleanVar(value=bool(upd_cfg.get("check_on_startup", True)))
         ttk.Checkbutton(frame, text="Check for updates when the app starts", variable=upd_var).grid(
             row=6, column=0, columnspan=3, sticky="w", pady=3)
+        ui_cfg = cfg.setdefault("ui", {})
+        theme_row = ttk.Frame(frame)
+        theme_row.grid(row=7, column=0, columnspan=3, sticky="w", pady=(10, 3))
+        ttk.Label(theme_row, text="Appearance:").pack(side="left")
+        theme_var = tk.StringVar(value=ui_cfg.get("theme", "system"))
+        for value, label in (("system", "Match system"), ("light", "Light"), ("dark", "Dark")):
+            ttk.Radiobutton(theme_row, text=label, variable=theme_var, value=value).pack(side="left", padx=(10, 0))
 
-        ttk.Label(frame, text=f"Saved to: {config_write_path()}", foreground="#666").grid(
-            row=7, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ttk.Label(frame, text=f"Saved to: {config_write_path()}", foreground=self.palette["muted"]).grid(
+            row=8, column=0, columnspan=3, sticky="w", pady=(10, 0))
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=8, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        btn_row.grid(row=9, column=0, columnspan=3, sticky="e", pady=(12, 0))
 
         def save() -> None:
             out_cfg["directory"] = out_var.get().strip() or "./output"
@@ -1607,6 +1676,7 @@ class ScannerGUI:
             ins_cfg["path"] = ins_path.get().strip()
             scan_cfg["external_scripts"] = ext_var.get()
             upd_cfg["check_on_startup"] = upd_var.get()
+            ui_cfg["theme"] = theme_var.get()
             try:
                 written = save_config(cfg)
             except OSError as e:
@@ -1614,6 +1684,7 @@ class ScannerGUI:
                                      "to write the installed settings file.)")
                 return
             self.output_dir = resolve_output_dir(out_cfg["directory"])
+            self._apply_theme(ui_cfg["theme"])
             self._log(f"[+] Settings saved to {written}. Reports now go to {self.output_dir}", "ok")
             self.refresh_history()
             win.destroy()
@@ -1635,7 +1706,7 @@ class ScannerGUI:
                               "to the output folder each time.", wraplength=self.px(460), justify="left").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
         status = ("Current: " + current.describe()) if current else "No scheduled scan is set up."
-        ttk.Label(frame, text=status, foreground="#2b6cb0").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text=status, foreground=self.palette["accent"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         ttk.Label(frame, text="Target:").grid(row=2, column=0, sticky="w", pady=3)
         target_var = tk.StringVar(value=(current.target if current and current.target != "(unknown)"
@@ -1654,7 +1725,7 @@ class ScannerGUI:
         time_var = tk.StringVar(value=f"{current.hour:02d}:{current.minute:02d}" if current else "02:00")
         ttk.Entry(frame, textvariable=time_var, width=8).grid(row=5, column=1, sticky="w", pady=3)
         ttk.Label(frame, text="Runs with full rights whether or not anyone is logged in. Needs the installed "
-                              "copy of NetworkLens (not the portable exe).", foreground="#666",
+                              "copy of NetworkLens (not the portable exe).", foreground=self.palette["muted"],
                   wraplength=self.px(460), justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         btn_row = ttk.Frame(frame)
@@ -1724,9 +1795,8 @@ class ScannerGUI:
         for _ts, when, target, kind, hosts, risk, p in rows:
             self.hist_tree.insert("", "end", values=(when, target, kind, hosts, risk, p.name),
                                   tags=(risk.lower(),))
-        for level, color in (("critical", "#b00020"), ("high", "#a25600"), ("medium", "#856100"),
-                             ("low", "#0a7d2c")):
-            self.hist_tree.tag_configure(level, foreground=color)
+        for level in ("critical", "high", "medium", "low"):
+            self.hist_tree.tag_configure(level, foreground=self.palette[level])
         self.hist_note_var.set(f"{len(rows)} report(s) in {folder}")
 
     @staticmethod

@@ -620,6 +620,7 @@ with a warning.
 - `scan_options.external_scripts` — allow nmap scripts that contact third-party services
   (see [How analysis works](#how-analysis-works)). Off by default.
 - `updates.check_on_startup` — look for a new release when the app starts (see [Updates](#updates)).
+- `ui.theme` — `system` (follow the OS light/dark setting), `light`, or `dark`. Also in *Settings › Appearance*.
 - `output.directory` — where reports and event files are written. An absolute path is
   used as-is. A relative one (like the default) is placed under
   `Documents\CybX NetworkLens\` for an installed or portable build, and under the
@@ -714,6 +715,7 @@ CybXNetworkLens/
 │   ├── report_html.py   # The hand-over HTML report
 │   ├── scheduled.py     # Scheduled scans (Task Scheduler / launchd / cron)
 │   ├── diagnostics.py   # Support-info bundle
+│   ├── ui_theme.py      # Sun Valley theme + light/dark palette
 │   └── output.py        # Report JSON + Insights nmap_chat NDJSON events
 ├── config/config.json   # Scan + output settings (no secrets)
 ├── insights/            # CybX Insight collector rules + config for ingest

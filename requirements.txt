@@ -1,4 +1,6 @@
-# CybX NetworkLens build dependencies
-# Runtime uses only the Python standard library (tkinter, subprocess, xml, json).
+# CybX NetworkLens dependencies
+# Runtime: the standard library (tkinter, subprocess, xml, json) plus sv-ttk,
+# the Sun Valley ttk theme the GUI's look comes from (pure Tcl, no compiled code).
 # PyInstaller is only needed to build the standalone executables.
+sv-ttk>=2.6
 pyinstaller>=6.0.0

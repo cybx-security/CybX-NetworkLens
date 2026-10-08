@@ -242,6 +242,7 @@ python -m PyInstaller ^
     --add-data "binaries;binaries" ^
     --add-data "installers;installers" ^
     --add-data "packaging\icon;packaging\icon" ^
+    --collect-all sv_ttk ^
     --hidden-import gui ^
     --hidden-import local_analyzer ^
     --hidden-import selftest ^
@@ -273,6 +274,7 @@ python -m PyInstaller ^
     --add-data "binaries;binaries" ^
     --add-data "installers;installers" ^
     --add-data "packaging\icon;packaging\icon" ^
+    --collect-all sv_ttk ^
     --hidden-import local_analyzer ^
     --hidden-import selftest ^
     --paths src ^
