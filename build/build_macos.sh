@@ -129,7 +129,19 @@ cp "$BUILD_DIR/networklens" "$STAGE/networklens"
 cp "$PROJECT_DIR/packaging/macos/READ ME FIRST.txt" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
-hdiutil create -volname "CybX NetworkLens $VERSION" -srcfolder "$STAGE" -ov -format UDZO -quiet "$DMG"
+# hdiutil create fails intermittently ("Resource busy") on busy machines and
+# on GitHub's macOS runners; a retry a few seconds later goes through.
+attempt=1
+until hdiutil create -volname "CybX NetworkLens $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"; do
+    if [ "$attempt" -ge 5 ]; then
+        echo "[!] hdiutil create failed $attempt times; no disk image was written."
+        rm -rf "$STAGE"
+        exit 1
+    fi
+    attempt=$((attempt + 1))
+    echo "[*] hdiutil create failed, retrying ($attempt/5)..."
+    sleep 5
+done
 rm -rf "$STAGE"
 echo "[+] Disk image: $DMG"
 
