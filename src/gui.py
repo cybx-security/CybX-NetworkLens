@@ -1502,9 +1502,7 @@ class ScannerGUI:
             self.status_var.set(f"Update available: version {release.version} - click \"Check for Updates...\"")
             return
 
-        notes = release.notes.strip()
-        if len(notes) > 600:
-            notes = notes[:600].rstrip() + "..."
+        notes = updater.notes_for_display(release.notes)
         notes_block = f"\n\nWhat's new:\n{notes}" if notes else ""
 
         if updater.can_self_update():
@@ -1517,8 +1515,8 @@ class ScannerGUI:
             if not release.has_installer:
                 messagebox.showwarning(
                     "Update not downloadable",
-                    f"Version {release.version} is published but has no Windows installer "
-                    f"attached yet.\n\nSee {release.url}")
+                    f"Version {release.version} is published but has no package for this "
+                    f"computer attached yet.\n\nSee {release.url}")
                 return
             go = messagebox.askyesno(
                 "Update available",
@@ -1576,7 +1574,7 @@ class ScannerGUI:
         self.status_var.set("Installing update...")
         self.root.update_idletasks()
         try:
-            updater.run_installer(installer_path)
+            updater.apply_update(installer_path)
         except updater.UpdateError as e:
             self._handle_update_error(str(e))
             return

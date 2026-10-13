@@ -8,7 +8,7 @@
 | **macOS** Intel | `CybXNetworkLens-<version>-macos-x86_64.dmg` | Same as above. |
 | **Linux** x86-64 / arm64 | `CybXNetworkLens-<version>-linux-<arch>.tar.gz` | `tar xzf`, then `sudo ./install.sh` (needs `nmap` from your distro). |
 
-`SHA256SUMS` lists every file's checksum; the app's **Check for Updates** verifies the Windows installer against it before installing.
+`SHA256SUMS` lists every file's checksum; the app's **Check for Updates** downloads the right file for your computer, verifies it against this list, installs it and reopens — on Windows, macOS and Linux.
 
 Full scans (SYN scan, OS detection, UDP services) need administrator rights, so the app asks for them when it starts — Windows' permission prompt, the macOS password dialog, or polkit on Linux. Decline and it still runs, using a TCP-connect scan. The command-line tool does not prompt: run it with `sudo` / from an Administrator prompt.
 

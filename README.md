@@ -442,15 +442,18 @@ Releases are published on GitHub at
 https://github.com/cybx-security/CybX-NetworkLens/releases, and the app updates itself
 from there.
 
-**For users:** click **Check for Updates...** (bottom right of the main window). If a
-newer version exists you see what's new and can choose **Yes** to install it: the
-installer downloads (about 50 MB), is verified against the release's checksums, the
-app closes, the update installs silently, and the app reopens on the new version.
+**For users:** click **Check for Updates** (top right of the main window). If a newer
+version exists you see what's new and can choose **Yes** to install it: the package for
+this computer downloads (50–75 MB), is verified against the release's checksums, the
+app closes, the update installs, and the app reopens on the new version. On Windows
+that runs the installer silently; on macOS the new `.app` replaces the installed one in
+place (it must be in a normal folder such as Applications, not running off the disk
+image); on Linux the installed files under `/opt/cybx-networklens` are replaced.
 Settings and saved reports are kept. The app also checks once at startup and shows a
 note in the status bar if an update exists; it never installs anything without being
-asked. The portable exe, macOS and Linux builds can't replace themselves, so there the
-button opens the download page instead. `networklens --check-update` does the same
-check from the command line (exit code 10 = update available).
+asked. Only the portable Windows exe can't replace itself — there the button opens the
+download page. `networklens --check-update` does the same check from the command line
+(exit code 10 = update available).
 
 **Privacy:** the check is one request to `api.github.com` for the latest release. It
 carries no information about you or any scanned network, only the app's version in the
@@ -469,8 +472,9 @@ the button still works on demand.
    every installed copy's *Check for Updates* offers it. Nothing reaches customers
    while it is a draft.
 
-A release **must** carry `SHA256SUMS` next to the installer: the updater refuses to
-install anything it can't verify. Releases are unsigned, so integrity rests on HTTPS
+A release **must** carry `SHA256SUMS` next to the packages: the updater refuses to
+install anything it can't verify, and on macOS it also checks the new bundle's code
+signature before swapping it in. Releases are unsigned, so integrity rests on HTTPS
 plus those checksums — anyone who can publish a release to the repository can update
 every customer machine. Guard that access accordingly. The CI build does not bundle
 Npcap (its free licence doesn't allow redistribution) — the installer fetches it from

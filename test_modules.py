@@ -550,20 +550,24 @@ assert _main.__version__ == __version__ and __version__.count(".") == 2
 print(f"Version {__version__} shared by CLI/GUI/reports")
 
 print("\n=== Testing Updater (GitHub Releases) ===")
-import hashlib, os, threading
+import hashlib, os, threading, platform
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 _installer = b"MZ fake installer " * 2000
-_sums = hashlib.sha256(_installer).hexdigest() + "  CybXNetworkLens-Setup-9.9.9.exe\n"
+# One fake package per platform, all the same bytes, so the test runs anywhere.
+_ASSET_NAMES = ["CybXNetworkLens-Setup-9.9.9.exe", "CybXNetworkLens-9.9.9-macos-arm64.dmg",
+                "CybXNetworkLens-9.9.9-macos-x86_64.dmg", "CybXNetworkLens-9.9.9-linux-x86_64.tar.gz",
+                "CybXNetworkLens-9.9.9-linux-aarch64.tar.gz"]
+_sums = "".join(hashlib.sha256(_installer).hexdigest() + f"  {n}\n" for n in _ASSET_NAMES)
 _state = {"with_sums": True, "corrupt": False}
 
 class _FakeGitHub(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
         if self.path.endswith("/releases/latest"):
-            assets = [{"name": "CybXNetworkLens-Setup-9.9.9.exe", "size": len(_installer),
-                       "browser_download_url": f"http://127.0.0.1:{_port}/dl/setup.exe"},
-                      {"name": "networklens.exe", "size": 1, "browser_download_url": "x"}]
+            assets = [{"name": n, "size": len(_installer),
+                       "browser_download_url": f"http://127.0.0.1:{_port}/dl/setup.exe"} for n in _ASSET_NAMES]
+            assets.append({"name": "networklens.exe", "size": 1, "browser_download_url": "x"})
             if _state["with_sums"]:
                 assets.append({"name": "SHA256SUMS", "size": len(_sums),
                                "browser_download_url": f"http://127.0.0.1:{_port}/dl/sums"})
@@ -585,7 +589,8 @@ assert updater.compare_versions("1.2.0", "1.1.0") == 1 and updater.compare_versi
 assert updater.compare_versions("1.9.0", "1.10.0") == -1, "versions compare numerically, not as strings"
 assert updater.compare_versions("dev", "0.0.1") == -1, "an unparsable version is older than any release"
 rel, newer = updater.check_for_update("1.1.0")
-assert newer and rel.version == "9.9.9" and rel.asset_name.endswith("-Setup-9.9.9.exe") and rel.sums_url
+assert newer and rel.version == "9.9.9" and rel.sums_url
+assert updater._asset_pattern().search(rel.asset_name), f"picked {rel.asset_name} for this platform"
 assert not updater.check_for_update("9.9.9")[1], "same version is not an update"
 import tempfile
 with tempfile.TemporaryDirectory() as d:
@@ -685,5 +690,16 @@ assert paths.insights_feed_path({"output": {"insights_events": {"enabled": False
 custom = paths.insights_feed_path({"output": {"insights_events": {"path": "/tmp/x/feed.ndjson"}}})
 assert str(custom) == "/tmp/x/feed.ndjson"
 print(f"Default feed: {feed_default}; empty path = default; disabled = none; custom honoured")
+
+print("\n=== Testing Update Notes Cleanup and Asset Selection ===")
+body = open("packaging/release-notes.md").read() + "\n## What's Changed\n* Fix **thing** in `gui.py` by @me in https://github.com/x/y/pull/9\n\n**Full Changelog**: https://github.com/x/y/compare/a...b\n"
+shown = updater.notes_for_display(body)
+assert "Downloads" not in shown and "|" not in shown, "the download table must not appear in the dialog"
+assert "• Fix thing in gui.py" in shown and "Full Changelog" not in shown and "http" not in shown, shown
+assert updater.notes_for_display("") == ""
+pat = updater._asset_pattern().pattern
+assert ("Setup" in pat) == (platform.system() == "Windows")
+assert ("dmg" in pat) == (platform.system() == "Darwin")
+print("Dialog shows only the change list, plain text; asset pattern matches this platform")
 
 print("\n✅ All tests passed!")

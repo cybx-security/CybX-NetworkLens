@@ -1,11 +1,13 @@
 """
 Self-update from GitHub Releases.
 
-Checks the latest release of the public repository, downloads the Windows
-installer from it, verifies the download against the release's SHA256SUMS,
-and runs the installer silently with /RELAUNCH so the app comes back up on
-the new version. Only the stdlib is used (urllib), so this adds nothing to
-the build.
+Checks the latest release of the public repository, downloads this
+platform's package from it, verifies the download against the release's
+SHA256SUMS, and installs it:
+  Windows  runs the installer silently with /RELAUNCH
+  macOS    mounts the DMG, swaps the .app bundle in place, relaunches
+  Linux    unpacks the tar.gz over the installed files, relaunches
+Only the stdlib is used (urllib), so this adds nothing to the build.
 
 Releases are unsigned for now: integrity rests on HTTPS to GitHub plus the
 published checksums. Anything that can publish a release to the repository
@@ -20,8 +22,10 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -40,11 +44,22 @@ REPO = "cybx-security/CybX-NetworkLens"
 API_BASE = os.environ.get("CYBX_UPDATE_API", "https://api.github.com").rstrip("/")
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 
-# The installer the Windows build produces (build\build_windows.bat), and the
-# checksum list every release must carry. Matched loosely on the prefix so a
-# renamed product keeps updating older installs.
-_SETUP_ASSET_RE = re.compile(r"-Setup-[\w.\-]+\.exe$", re.IGNORECASE)
+# The checksum list every release must carry.
 _SUMS_NAMES = ("SHA256SUMS", "SHA256SUMS.txt")
+
+
+def _asset_pattern() -> re.Pattern:
+    """The release file for this OS and CPU. Matched loosely on the prefix so a
+    renamed product keeps updating older installs."""
+    system = platform.system()
+    machine = platform.machine().lower()
+    if system == "Windows":
+        return re.compile(r"-Setup-[\w.\-]+\.exe$", re.IGNORECASE)
+    if system == "Darwin":
+        arch = "arm64" if machine in ("arm64", "aarch64") else "x86_64"
+        return re.compile(rf"-macos-{arch}\.dmg$", re.IGNORECASE)
+    arch = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
+    return re.compile(rf"-linux-{arch}\.tar\.gz$", re.IGNORECASE)
 
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
 _TIMEOUT = 30  # seconds per request
@@ -61,7 +76,7 @@ class Release:
     notes: str
     url: str              # release page
     published_at: str
-    asset_name: str = ""  # Windows installer in this release, if any
+    asset_name: str = ""  # this platform's package in the release, if any
     asset_url: str = ""
     asset_size: int = 0
     sums_url: str = ""
@@ -127,9 +142,10 @@ def check_for_update(current_version: str) -> Tuple[Release, bool]:
         url=str(data.get("html_url") or RELEASES_PAGE),
         published_at=str(data.get("published_at") or ""),
     )
+    wanted = _asset_pattern()
     for asset in data.get("assets", []) or []:
         name = str(asset.get("name", ""))
-        if _SETUP_ASSET_RE.search(name) and not release.asset_url:
+        if wanted.search(name) and not release.asset_url:
             release.asset_name = name
             release.asset_url = str(asset.get("browser_download_url", ""))
             release.asset_size = int(asset.get("size") or 0)
@@ -139,19 +155,88 @@ def check_for_update(current_version: str) -> Tuple[Release, bool]:
     return release, compare_versions(release.version, current_version) > 0
 
 
+_MD_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+
+
+def notes_for_display(body: str, limit: int = 700) -> str:
+    """
+    The human part of a release body, as plain text.
+
+    Release bodies start with the download table from
+    packaging/release-notes.md (meant for the web page) and continue with the
+    generated change list; the dialog wants only the latter, without markdown
+    syntax.
+    """
+    text = body or ""
+    for marker in ("## Changes", "## What's Changed"):
+        idx = text.find(marker)
+        if idx >= 0:
+            text = text[idx + len(marker):]
+            break
+    lines = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or _MD_TABLE_ROW.match(line) or line.startswith("<!--"):
+            continue
+        line = re.sub(r"^#{1,6}\s*", "", line)                    # headings
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)               # bold
+        line = re.sub(r"`([^`]*)`", r"\1", line)                   # code
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)      # links
+        line = re.sub(r"\s+by\s+@\S+\s+in\s+https?://\S+$", "", line)  # "by @x in <pr url>"
+        line = re.sub(r"https?://\S+", "", line).rstrip()
+        if line.lower().startswith("full changelog"):
+            continue
+        if line.startswith(("* ", "- ")):
+            line = "• " + line[2:]
+        if line:
+            lines.append(line)
+    out = "\n".join(lines).strip()
+    if len(out) > limit:
+        out = out[:limit].rstrip() + "..."
+    return out
+
+
+def app_bundle_path() -> Optional[Path]:
+    """The .app this process runs from on macOS, or None."""
+    exe = Path(sys.executable).resolve()
+    for parent in exe.parents:
+        if parent.suffix == ".app":
+            return parent
+    return None
+
+
+def _writable_dir(path: Path) -> bool:
+    try:
+        if os.statvfs(path).f_flag & os.ST_RDONLY:
+            return False
+    except (OSError, AttributeError):
+        pass
+    return os.access(path, os.W_OK)
+
+
 def can_self_update() -> bool:
     """
     Whether this process can replace itself by running the installer.
 
-    True only for the installed Windows layout (the folder build the
-    installer puts in Program Files). A portable exe, a macOS/Linux build or
-    a source checkout is pointed at the releases page instead: running the
-    Windows installer there would install a second copy, not update this one.
+    Windows: the installed layout (the folder build the installer puts in
+    Program Files) - a portable exe is pointed at the releases page instead,
+    since the installer would add a second copy rather than update it.
+    macOS: running from a .app bundle in a writable folder (not straight off
+    the DMG). Linux: the installed folder (install.sh) when writable. A
+    source checkout never self-updates.
     """
-    if platform.system() != "Windows" or not is_frozen():
+    if not is_frozen():
         return False
+    system = platform.system()
     here = app_dir()
-    return (here / "_internal").is_dir() and (here / "CybXNetworkLens.exe").exists()
+    if system == "Windows":
+        return (here / "_internal").is_dir() and (here / "CybXNetworkLens.exe").exists()
+    if system == "Darwin":
+        bundle = app_bundle_path()
+        return bundle is not None and _writable_dir(bundle.parent)
+    if system == "Linux":
+        return (here / "networklens-gui").exists() and _writable_dir(here)
+    return False
 
 
 def _expected_sum(release: Release, current_version: str) -> str:
@@ -221,6 +306,123 @@ def download_installer(release: Release, dest_dir: str, current_version: str,
         raise UpdateError(f"The downloaded {release.asset_name} does not match the release's "
                           f"checksum (got {got[:12]}..., expected {want[:12]}...). Not installing it.")
     return str(path)
+
+
+def apply_update(package_path: str) -> None:
+    """
+    Install the verified package for this platform and start the new version.
+    The caller must exit promptly afterwards.
+    """
+    system = platform.system()
+    if system == "Windows":
+        run_installer(package_path)
+    elif system == "Darwin":
+        _install_dmg(package_path)
+    elif system == "Linux":
+        _install_tarball(package_path)
+    else:
+        raise UpdateError(f"Self-update is not available on {system}.")
+
+
+def _relaunch(executable: Path) -> None:
+    """Start the new build, detached, with the same environment (it is already
+    elevated, so the loop guard keeps it from prompting again)."""
+    env = dict(os.environ)
+    env["CYBX_ELEVATED"] = "1"
+    try:
+        subprocess.Popen([str(executable)], env=env, cwd="/", close_fds=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError as e:
+        raise UpdateError(f"Installed, but could not start the new version: {e}")
+
+
+def _install_dmg(dmg_path: str, bundle: Optional[Path] = None) -> Path:
+    """
+    Replace the running .app with the one inside the DMG. Returns the new
+    bundle path. `bundle` is the app to replace (default: the running one).
+    """
+    bundle = bundle or app_bundle_path()
+    if bundle is None:
+        raise UpdateError("Not running from an .app bundle; download the update from the releases page.")
+    if not _writable_dir(bundle.parent):
+        raise UpdateError(f"{bundle.parent} is not writable (is the app still on the disk image? "
+                          "Drag it to Applications first).")
+    mount = Path(tempfile.mkdtemp(prefix="networklens-dmg-"))
+    try:
+        r = subprocess.run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount), dmg_path],
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            raise UpdateError(f"Could not open the downloaded disk image: {(r.stderr or r.stdout).strip()}")
+        apps = [p for p in mount.iterdir() if p.suffix == ".app"]
+        if not apps:
+            raise UpdateError("The disk image holds no application bundle.")
+        new_app = apps[0]
+        staged = bundle.parent / (bundle.name + ".update")
+        shutil.rmtree(staged, ignore_errors=True)
+        # ditto keeps the code signature, permissions and resource forks intact.
+        r = subprocess.run(["ditto", str(new_app), str(staged)], capture_output=True, text=True, timeout=600)
+        if r.returncode != 0:
+            shutil.rmtree(staged, ignore_errors=True)
+            raise UpdateError(f"Could not copy the new version: {(r.stderr or r.stdout).strip()}")
+        r = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(staged)],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            shutil.rmtree(staged, ignore_errors=True)
+            raise UpdateError("The new version's code signature does not verify; not installing it.")
+        old = bundle.parent / (bundle.name + ".old")
+        shutil.rmtree(old, ignore_errors=True)
+        os.rename(bundle, old)
+        try:
+            os.rename(staged, bundle)
+        except OSError:
+            os.rename(old, bundle)
+            raise
+        shutil.rmtree(old, ignore_errors=True)
+    finally:
+        subprocess.run(["hdiutil", "detach", str(mount), "-force"], capture_output=True, timeout=120)
+        shutil.rmtree(mount, ignore_errors=True)
+    try:
+        from paths import claim_for_owner
+    except ImportError:
+        from .paths import claim_for_owner
+    claim_for_owner(bundle)
+    exe = bundle / "Contents" / "MacOS" / "networklens-gui"
+    if not exe.exists():
+        raise UpdateError(f"Installed, but {exe} is missing.")
+    _relaunch(exe)
+    return bundle
+
+
+def _install_tarball(tar_path: str, dest: Optional[Path] = None) -> Path:
+    """Unpack the Linux package over the installed folder and relaunch."""
+    import tarfile
+    dest = dest or app_dir()
+    if not _writable_dir(dest):
+        raise UpdateError(f"{dest} is not writable; run the app with administrator rights to update.")
+    with tempfile.TemporaryDirectory(prefix="networklens-tgz-") as tmp:
+        with tarfile.open(tar_path, "r:gz") as tar:
+            members = [m for m in tar.getmembers() if not (m.name.startswith("/") or ".." in m.name)]
+            tar.extractall(tmp, members=members)
+        roots = [p for p in Path(tmp).iterdir() if p.is_dir()]
+        src = roots[0] if roots else Path(tmp)
+        for name in ("networklens", "networklens-gui"):
+            new = src / name
+            if not new.exists():
+                raise UpdateError(f"The package has no {name}.")
+            target = dest / name
+            tmp_target = dest / (name + ".update")
+            shutil.copy2(new, tmp_target)
+            os.chmod(tmp_target, 0o755)
+            os.replace(tmp_target, target)
+        for extra in ("README.txt", "icon.png", "install.sh", "uninstall.sh"):
+            if (src / extra).exists():
+                try:
+                    shutil.copy2(src / extra, dest / extra)
+                except OSError:
+                    pass
+    _relaunch(dest / "networklens-gui")
+    return dest
 
 
 def run_installer(installer_path: str) -> None:

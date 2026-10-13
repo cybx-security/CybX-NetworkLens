@@ -53,10 +53,11 @@ Your saved scan reports are kept.
 
 ### Updating
 
-Click **Check for Updates...** at the bottom right of the window. If there is a newer
+Click **Check for Updates** at the top right of the window. If there is a newer
 version you'll see what changed and can click **Yes** to install it: the scanner
 downloads the update, closes, installs, and reopens on the new version — your settings
-and saved reports are kept. If you're already current it just says so. The scanner also
+and saved reports are kept. This works on Windows, macOS and Linux (on a Mac the app
+needs to be in your Applications folder, not running from the downloaded disk image). If you're already current it just says so. The scanner also
 checks once when it starts and mentions an available update in the status bar; it never
 installs anything until you say yes.
 
