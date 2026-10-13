@@ -153,6 +153,10 @@ no silent mode — so the scanner offers it on first launch instead.
 
 **Updating:** click **Check for Updates...** in the app — see [Updates](#updates).
 
+> **macOS says the app "is damaged"?** That is Gatekeeper blocking an un-notarized
+> download. In Terminal: `xattr -cr "/Applications/CybX NetworkLens.app"`, then open it
+> again. (Version 1.3.0's bundle also had a broken signature, fixed in 1.3.1.)
+>
 > **"Windows protected your PC" (SmartScreen).** The installer is not code-signed, so
 > Windows shows this warning the first time. Click **More info > Run anyway**. Signing
 > the installer with a code-signing certificate is what removes the warning.

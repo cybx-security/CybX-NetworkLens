@@ -160,6 +160,18 @@ cp -R "$BUILD_DIR/networklens-gui.app" "$STAGE/CybX NetworkLens.app"
 # and it survives the drag to Applications (the loose copy below is for the
 # PATH / Homebrew's `binary` stanza).
 cp "$BUILD_DIR/networklens" "$STAGE/CybX NetworkLens.app/Contents/MacOS/networklens"
+# Adding a file to a signed bundle breaks its seal, and macOS reports a
+# bundle with a broken seal as "damaged and can't be opened" - with no
+# "Open Anyway" escape hatch. Re-sign (ad hoc, same as PyInstaller does)
+# after the copy, then prove the result verifies; the build fails otherwise.
+codesign --force --deep --sign - "$STAGE/CybX NetworkLens.app"
+if ! codesign --verify --deep --strict "$STAGE/CybX NetworkLens.app"; then
+    echo "[!] The app bundle's code signature does not verify after re-signing."
+    echo "    macOS would report it as damaged. Not packaging it."
+    rm -rf "$STAGE"
+    exit 1
+fi
+echo "[+] App bundle re-signed and verified."
 cp "$BUILD_DIR/networklens" "$STAGE/networklens"
 cp "$PROJECT_DIR/packaging/macos/READ ME FIRST.txt" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"

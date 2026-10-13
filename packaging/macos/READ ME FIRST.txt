@@ -10,6 +10,12 @@ once. Open it anyway:
        about CybX NetworkLens and click "Open Anyway", then confirm.
     (On older macOS, right-click the app > Open works instead.)
 
+If macOS instead says the app "is damaged and can't be opened", the download
+was blocked outright. Open Terminal and run, in one line:
+    xattr -cr "/Applications/CybX NetworkLens.app"
+then open the app again. (That removes the download quarantine mark; it is
+needed only until the app is notarized with Apple.)
+
 Each time it starts, the app asks for your password (the normal macOS
 "wants to make changes" dialog): full scans - SYN scan, OS detection, UDP
 services - need administrator rights. Click Cancel to run without them; it
