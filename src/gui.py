@@ -35,7 +35,7 @@ try:
     from local_analyzer import analyze_locally
     from output import (create_insights_report, generate_filename,
                         create_nmap_chat_events, write_ndjson_events,
-                        write_json_output)
+                        write_json_output, create_test_event)
     from main import load_config
     from npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
                        NPCAP_DOWNLOAD_URL)
@@ -62,7 +62,7 @@ except ImportError:
     from .local_analyzer import analyze_locally
     from .output import (create_insights_report, generate_filename,
                          create_nmap_chat_events, write_ndjson_events,
-                         write_json_output)
+                         write_json_output, create_test_event)
     from .main import load_config
     from .npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
                         NPCAP_DOWNLOAD_URL)
@@ -1672,6 +1672,23 @@ class ScannerGUI:
         ttk.Button(feed_btns, text="Copy path", command=copy_feed_path).pack(side="left")
         ttk.Button(feed_btns, text="Browse...", command=browse_feed).pack(side="left", padx=4)
         ttk.Button(feed_btns, text="Default", command=reset_feed).pack(side="left")
+
+        def write_test_event() -> None:
+            target = ins_path.get().strip() or str(default_insights_feed_path())
+            try:
+                written = write_ndjson_events([create_test_event(__version__)], target, append=True)
+            except OSError as e:
+                feed_status.set(f"Could not write the test event: {e}")
+                messagebox.showerror("Test event", f"Could not write to {target}:\n{e}\n\n"
+                                     "Writing there needs administrator rights, or choose another location.")
+                return
+            update_feed_status()
+            feed_status.set(f"Test event appended to {written}. It should reach Insights within a minute.")
+            self._log(f"[+] Test event appended to the Insights feed: {written}", "ok")
+            self._log("    Marked test=true with host 127.0.0.1 - if Insights shows it, the collector "
+                      "is tailing this file and the rules are installed.", "info")
+
+        ttk.Button(feed_btns, text="Write test event", command=write_test_event).pack(side="left", padx=(4, 0))
 
         feed_status = tk.StringVar()
 

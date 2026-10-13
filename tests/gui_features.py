@@ -60,6 +60,8 @@ assert root.clipboard_get() == str(paths.default_insights_feed_path()), "copy bu
 filedialog.asksaveasfilename = lambda **k: str(out / "feed.ndjson")
 buttons["Browse..."].invoke(); pump()
 assert feed_entry.get().endswith("feed.ndjson")
+buttons["Write test event"].invoke(); pump()
+assert (out / "feed.ndjson").exists() and json.loads((out / "feed.ndjson").read_text().splitlines()[0])["test"] is True
 buttons["Save"].invoke(); pump()
 saved = json.load(open(cfg_path)); assert saved["output"]["insights_events"]["path"].endswith("feed.ndjson"), saved
 # Default button -> stored as "" (follow the default)

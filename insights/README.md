@@ -70,7 +70,14 @@ exact fields the dashboard maps to a `NetworkEvent`. `agent.id`, `agent.name`,
    | OS | Agent config file | Restart command |
    |----|-------------------|-----------------|
    | Windows | `C:\Program Files (x86)\ossec-agent\ossec.conf` | `Restart-Service WazuhSvc` (PowerShell, as Administrator) |
+   | macOS | `/Library/Ossec/etc/ossec.conf` | `sudo /Library/Ossec/bin/wazuh-control restart` |
    | Linux | `/var/ossec/etc/ossec.conf` | `systemctl restart wazuh-agent` |
+
+   **Order matters:** make sure the feed file already exists before restarting
+   the agent (run one scan, or *Settings › Write test event* in the app). The
+   collector gives up on a `<localfile>` that is missing when it starts, and it
+   only forwards lines appended *after* it started tailing — a scan run before
+   the restart is never sent.
 
 3. **Scanner** — nothing to do if you use the defaults: the scanner already appends
    every scan to `C:\ProgramData\CybX\Insights\nmap_chat.ndjson` (Windows) or
@@ -103,6 +110,32 @@ exact fields the dashboard maps to a `NetworkEvent`. `agent.id`, `agent.name`,
    run, so the collector tails only new lines. Leave `path` empty to instead
    get a fresh per-scan `.ndjson` next to the JSON report (handy for
    manual/offline import).
+
+## Nothing arrives in Insight? Check in this order
+
+1. **Did the scanner write to the feed?** The app's Live Log ends a scan with
+   `Appended N event(s) to the Insights feed: <path>`. If it says *Could not
+   append*, the app lacks rights for that folder (on macOS/Linux it must be
+   running elevated — the password prompt at launch) or the path in Settings
+   points somewhere else. The exact path is in *Settings › Insights feed file*
+   (**Copy path**). A *partial* (stopped) scan is never sent.
+2. **Is the collector tailing that exact file?** `<location>` in the agent's
+   `ossec.conf` must match the path from Settings character for character, with
+   `<log_format>json</log_format>`. On the agent, `grep nmap_chat`
+   `/var/ossec/logs/ossec.log` (macOS: `/Library/Ossec/logs/ossec.log`, Windows:
+   `C:\Program Files (x86)\ossec-agent\ossec.log`) should show
+   `Analyzing file: '<path>'` after a restart. If it shows `Could not open file`
+   or nothing at all, the file did not exist at restart (see *Order matters*
+   above) or the agent is reading a different config.
+3. **Are the rules on the manager?** Without `cybx_nmap_chat_rules.xml` the
+   events decode but no rule fires, and only alerts reach the index Insight
+   reads. Test one line from the feed file with
+   `sudo /var/ossec/bin/wazuh-logtest` on the manager: it must report rule
+   `100200` plus one of `100201`–`100205` and **Alert to be generated**.
+4. **Generate a known event.** *Settings › Write test event* appends one
+   `nmap_chat` event (host `127.0.0.1`, marked as a test) to the feed so the
+   whole chain can be checked without running a scan. It should appear in the
+   collector's alerts within a few seconds and in Insight shortly after.
 
 ## Verify
 

@@ -9,10 +9,16 @@
   scanner on. The agent config file lives at:
 
     Windows: C:\Program Files (x86)\ossec-agent\ossec.conf
+    macOS:   /Library/Ossec/etc/ossec.conf
     Linux:   /var/ossec/etc/ossec.conf
+
+  Make sure the feed file EXISTS before restarting the agent (run a scan or use
+  Settings > Write test event in the app) - the agent gives up on a missing
+  file, and only forwards lines added after it started tailing.
 
   Then restart the collector agent:
     Windows: Restart-Service WazuhSvc     (PowerShell, as Administrator)
+    macOS:   sudo /Library/Ossec/bin/wazuh-control restart
     Linux:   systemctl restart wazuh-agent
 
   Point <location> at the NDJSON file the scanner appends to. The scanner's

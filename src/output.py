@@ -354,6 +354,32 @@ def create_nmap_chat_events(
     return events
 
 
+def create_test_event(scanner_version: str = "1.0.0") -> Dict[str, Any]:
+    """
+    One nmap_chat event for checking the collector pipeline without a scan.
+
+    Same shape as a real per-port event (so the collector's rules and Insight's
+    field mapping are exercised), clearly marked as a test in every field a
+    person would read.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "integration": NMAP_CHAT_INTEGRATION,
+        "test": True,
+        "scan": {"target": "127.0.0.1", "scanner_version": scanner_version, "scan_start": now,
+                 "scan_end": now, "scan_args": "test event (no scan was run)", "nmap_version": "",
+                 "time": now},
+        "insights_level_hint": _risk_to_level("info"),
+        "nmap": {"host": "127.0.0.1", "hostname": "networklens-test", "os_guess": "",
+                 "port": 0, "protocol": "tcp", "service": "test", "product": "", "version": "",
+                 "state": "open", "risk": "info", "cve_ids": [],
+                 "nse_results": "TEST EVENT written from CybX NetworkLens Settings to check the Insights feed."},
+        "ai_assessment": {"summary": "Test event from CybX NetworkLens - not a real finding. "
+                                     "If you can see this, the Insights feed is working.",
+                          "risk_level": "info", "findings": [], "recommendations": [], "source": "local"},
+    }
+
+
 def write_ndjson_events(events: List[Dict[str, Any]], output_path: str, append: bool = False) -> str:
     """
     Write events as newline-delimited JSON (one compact object per line).

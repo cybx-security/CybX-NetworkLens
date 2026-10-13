@@ -5,7 +5,7 @@ Read by the CLI, the GUI, the report writers, and the Windows installer
 build, so a release is one edit here.
 """
 
-__version__ = "1.3.3"
+__version__ = "1.3.4"
 
 
 if __name__ == "__main__":

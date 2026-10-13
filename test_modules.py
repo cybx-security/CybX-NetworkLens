@@ -702,4 +702,13 @@ assert ("Setup" in pat) == (platform.system() == "Windows")
 assert ("dmg" in pat) == (platform.system() == "Darwin")
 print("Dialog shows only the change list, plain text; asset pattern matches this platform")
 
+print("\n=== Testing Insights Test Event ===")
+from output import create_test_event
+te = create_test_event("x")
+assert te["integration"] == NMAP_CHAT_INTEGRATION and te["test"] is True
+for key in ("host", "os_guess", "port", "protocol", "nse_results", "risk"):
+    assert key in te["nmap"], f"test event missing nmap.{key} (Insight contract)"
+assert "summary" in te["ai_assessment"] and "\n" not in json.dumps(te, separators=(",", ":"))
+print("Test event keeps the nmap_chat contract and is single-line")
+
 print("\n✅ All tests passed!")
