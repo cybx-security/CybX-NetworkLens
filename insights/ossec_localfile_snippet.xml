@@ -15,9 +15,11 @@
     Windows: Restart-Service WazuhSvc     (PowerShell, as Administrator)
     Linux:   systemctl restart wazuh-agent
 
-  Point <location> at the NDJSON file the scanner appends to. Set the SAME path
-  in the scanner's config.json under output.insights_events.path so the two
-  agree (the scanner creates the folder if it doesn't exist). In JSON, escape
+  Point <location> at the NDJSON file the scanner appends to. The scanner's
+  defaults are the paths below (shown, with a Copy button, under Settings in
+  the app); to use another file set output.insights_events.path in the
+  scanner's config.json so the two agree (the scanner creates the folder if it
+  doesn't exist). In JSON, escape
   Windows backslashes ("C:\\ProgramData\\...") or use forward slashes
   ("C:/ProgramData/...") — both work.
 
@@ -40,7 +42,7 @@
   <location>C:\ProgramData\CybX\Insights\nmap_chat.ndjson</location>
 </localfile>
 
-<!-- Linux scanner box -->
+<!-- macOS or Linux scanner box -->
 <localfile>
   <log_format>json</log_format>
   <location>/var/log/insights/nmap_chat.ndjson</location>

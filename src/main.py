@@ -30,7 +30,7 @@ try:
                         print_summary, create_nmap_chat_events, write_ndjson_events)
     from npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
                        NPCAP_DOWNLOAD_URL)
-    from paths import config_candidates, resolve_output_dir
+    from paths import config_candidates, resolve_output_dir, insights_feed_path
     from version import __version__
 except ImportError:
     from .scanner import (run_scan, check_privileges, get_nmap_version,
@@ -42,7 +42,7 @@ except ImportError:
                          print_summary, create_nmap_chat_events, write_ndjson_events)
     from .npcap import (is_windows, is_npcap_installed, find_bundled_installer, install_npcap,
                         NPCAP_DOWNLOAD_URL)
-    from .paths import config_candidates, resolve_output_dir
+    from .paths import config_candidates, resolve_output_dir, insights_feed_path
     from .version import __version__
 
 
@@ -602,13 +602,20 @@ def main() -> int:
                 scanner_version=__version__,
                 scan_type=scan_type,
             )
-            # A configured fixed path is the collector-watched file: append so the
-            # Insights collector tails new lines. No configured path -> fresh
-            # per-scan file next to the JSON report.
-            configured_path = insights_cfg.get('path')
-            events_path = configured_path or str(Path(final_path).with_suffix('.ndjson'))
-            events_final = write_ndjson_events(events, events_path, append=bool(configured_path))
+            # A per-scan record next to the report, plus an append to the one
+            # fixed file the Insights collector tails (configured path or the
+            # per-OS default) so the collector sees every scan.
+            events_final = write_ndjson_events(events, str(Path(final_path).with_suffix('.ndjson')))
             print(f"[+] Insights events ({len(events)}) saved to: {events_final}")
+            feed = insights_feed_path(config)
+            if feed is not None and feed.resolve() != Path(events_final).resolve():
+                try:
+                    appended = write_ndjson_events(events, str(feed), append=True)
+                    print(f"[+] Appended {len(events)} event(s) to the Insights feed: {appended}")
+                except OSError as e:
+                    print(f"[!] Could not append to the Insights feed {feed}: {e}")
+                    print("    (writing there needs administrator/root rights, or set another "
+                          "path in Settings / output.insights_events.path)")
         except Exception as e:
             print(f"[!] Failed to write Insights events: {e}")
 

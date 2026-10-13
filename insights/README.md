@@ -72,10 +72,14 @@ exact fields the dashboard maps to a `NetworkEvent`. `agent.id`, `agent.name`,
    | Windows | `C:\Program Files (x86)\ossec-agent\ossec.conf` | `Restart-Service WazuhSvc` (PowerShell, as Administrator) |
    | Linux | `/var/ossec/etc/ossec.conf` | `systemctl restart wazuh-agent` |
 
-3. **Scanner** — point it at that same file so scanner and collector agree. Edit
-   the scanner's config file — for an installed copy on Windows that is
-   `C:\ProgramData\CybX\NetworkLens\config.json` (edit as Administrator; it
-   survives upgrades); when running from source it is `config/config.json`:
+3. **Scanner** — nothing to do if you use the defaults: the scanner already appends
+   every scan to `C:\ProgramData\CybX\Insights\nmap_chat.ndjson` (Windows) or
+   `/var/log/insights/nmap_chat.ndjson` (macOS/Linux) — the same paths as the
+   `<localfile>` blocks above. Open **Settings** in the app to see the exact path and
+   **Copy path** it into the collector config. To use a different file, change it in
+   Settings (or in the scanner's config file — for an installed copy on Windows that
+   is `C:\ProgramData\CybX\NetworkLens\config.json`, edited as Administrator; from
+   source it is `config/config.json`):
 
    Windows scanner box (JSON needs `\\` — or use forward slashes, both work):
    ```json

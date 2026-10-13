@@ -166,6 +166,34 @@ def config_candidates() -> List[Path]:
     return [bundled, Path("./config.json"), Path("./config/config.json")]
 
 
+def default_insights_feed_path() -> Path:
+    """
+    Where Insights events are appended when no path is configured.
+
+    Machine-wide and outside any user profile, so the Insights collector
+    agent (a service) can read it and it survives whoever is logged in. These
+    are the paths the collector setup guide (insights/README.md) uses.
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("PROGRAMDATA") or r"C:\ProgramData"
+        return Path(base) / "CybX" / "Insights" / "nmap_chat.ndjson"
+    return Path("/var/log/insights/nmap_chat.ndjson")
+
+
+def insights_feed_path(config: Optional[dict]) -> Optional[Path]:
+    """
+    The feed file scans append to: the configured one, else the default.
+    None when Insights events are switched off in the config.
+    """
+    cfg = (config or {}).get("output", {}).get("insights_events", {})
+    if not cfg.get("enabled", True):
+        return None
+    raw = (cfg.get("path") or "").strip()
+    if raw:
+        return Path(os.path.expandvars(os.path.expanduser(raw)))
+    return default_insights_feed_path()
+
+
 def config_write_path() -> Path:
     """
     Where the Settings dialog saves: the file that was loaded if it is one of

@@ -41,7 +41,8 @@ try:
                        NPCAP_DOWNLOAD_URL)
     from diff import diff_reports, format_diff_lines, load_report
     from parser import port_dict_is_open
-    from paths import resolve_output_dir, icon_path, claim_for_owner, save_config, config_write_path
+    from paths import (resolve_output_dir, icon_path, claim_for_owner, save_config, config_write_path,
+                       insights_feed_path, default_insights_feed_path)
     from version import __version__
     import updater
     from elevate import relaunch_elevated
@@ -67,7 +68,8 @@ except ImportError:
                         NPCAP_DOWNLOAD_URL)
     from .diff import diff_reports, format_diff_lines, load_report
     from .parser import port_dict_is_open
-    from .paths import resolve_output_dir, icon_path, claim_for_owner, save_config, config_write_path
+    from .paths import (resolve_output_dir, icon_path, claim_for_owner, save_config, config_write_path,
+                        insights_feed_path, default_insights_feed_path)
     from .version import __version__
     from . import updater
     from .elevate import relaunch_elevated
@@ -131,6 +133,9 @@ class ScannerGUI:
         for msg in config_messages:
             self._log(msg, "warn" if msg.startswith("[!]") else "info")
         self._log(f"[*] Reports are saved to: {self.output_dir}", "info")
+        feed = insights_feed_path(self.config)
+        if feed is not None:
+            self._log(f"[*] Insights feed (the file the collector tails): {feed}", "info")
         self._show_environment()
         self.root.after(300, self._detect_network)
         self.root.after(600, self.refresh_history)
@@ -1136,20 +1141,19 @@ class ScannerGUI:
                 # without this append a GUI scan never reaches Insights (the CLI
                 # does the same via insights_events.path in main.py). Skip only
                 # when it would double-write the same file we just wrote.
-                insights_cfg = self.config.get("output", {}).get("insights_events", {})
-                collector_path = insights_cfg.get("path")
+                feed = insights_feed_path(self.config)
                 if partial:
                     self._log("[*] Partial scan: events saved locally only, not appended to the "
                               "Insights feed.", "warn")
-                elif insights_cfg.get("enabled", True) and collector_path:
-                    if Path(collector_path).resolve() != Path(events_path).resolve():
-                        appended = write_ndjson_events(
-                            self.last_events, collector_path, append=True)
-                        self._log(f"[+] Appended {len(self.last_events)} event(s) to "
+                elif feed is not None and feed.resolve() != Path(events_path).resolve():
+                    try:
+                        appended = write_ndjson_events(self.last_events, str(feed), append=True)
+                        self._log(f"[+] Appended {len(self.last_events)} event(s) to the "
                                   f"Insights feed: {appended}", "ok")
-                elif insights_cfg.get("enabled", True):
-                    self._log("[*] No Insights feed path set (output.insights_events.path); "
-                              "events saved locally only, not sent to Insights.", "warn")
+                    except OSError as e:
+                        self._log(f"[!] Could not append to the Insights feed {feed}: {e}", "error")
+                        self._log("    Writing there needs administrator rights; or pick another "
+                                  "location under Settings.", "warn")
             except Exception as e:
                 self._log(f"[!] Failed to auto-write Insights events: {e}", "warn")
 
@@ -1637,43 +1641,83 @@ class ScannerGUI:
             row=1, column=1, sticky="w")
 
         ins_enabled = tk.BooleanVar(value=bool(ins_cfg.get("enabled", True)))
-        ttk.Checkbutton(frame, text="Write Insights events (per-port NDJSON)", variable=ins_enabled).grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(10, 3))
+        ttk.Checkbutton(frame, text="Send scans to Insights (append per-port events to the feed file)",
+                        variable=ins_enabled).grid(row=2, column=0, columnspan=3, sticky="w", pady=(10, 3))
         ttk.Label(frame, text="Insights feed file:").grid(row=3, column=0, sticky="w", pady=3)
-        ins_path = tk.StringVar(value=ins_cfg.get("path", "") or "")
-        ttk.Entry(frame, textvariable=ins_path, width=52).grid(row=3, column=1, sticky="we", pady=3)
-        ttk.Button(frame, text="Browse...", command=lambda: (
-            lambda f: ins_path.set(f) if f else None)(filedialog.asksaveasfilename(
+        # Always shows the file actually in use (the default when nothing is
+        # configured), so there is a concrete path to copy into the collector's
+        # <localfile> entry.
+        ins_path = tk.StringVar(value=str(insights_feed_path(cfg) or default_insights_feed_path()))
+        ins_entry = ttk.Entry(frame, textvariable=ins_path, width=52)
+        ins_entry.grid(row=3, column=1, sticky="we", pady=3)
+        feed_btns = ttk.Frame(frame)
+        feed_btns.grid(row=3, column=2, padx=4)
+
+        def copy_feed_path() -> None:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(ins_path.get().strip())
+            feed_status.set("Path copied to the clipboard.")
+
+        def browse_feed() -> None:
+            chosen = filedialog.asksaveasfilename(
                 title="Insights feed file the collector tails", defaultextension=".ndjson",
-                initialfile="nmap_chat.ndjson"))).grid(row=3, column=2, padx=4)
-        ttk.Label(frame, text="The fixed file the Insights collector tails; events are appended after every "
-                              "scan. Leave empty to only keep per-scan files.", foreground=self.palette["muted"],
+                initialfile=Path(ins_path.get() or "nmap_chat.ndjson").name,
+                initialdir=str(Path(ins_path.get()).parent) if ins_path.get() else None)
+            if chosen:
+                ins_path.set(chosen)
+                update_feed_status()
+
+        def reset_feed() -> None:
+            ins_path.set(str(default_insights_feed_path()))
+            update_feed_status()
+
+        ttk.Button(feed_btns, text="Copy path", command=copy_feed_path).pack(side="left")
+        ttk.Button(feed_btns, text="Browse...", command=browse_feed).pack(side="left", padx=4)
+        ttk.Button(feed_btns, text="Default", command=reset_feed).pack(side="left")
+
+        feed_status = tk.StringVar()
+
+        def update_feed_status() -> None:
+            p = Path(ins_path.get().strip()) if ins_path.get().strip() else None
+            if p is None:
+                feed_status.set("No path - the default will be used.")
+            elif p.exists():
+                feed_status.set(f"File exists ({p.stat().st_size // 1024} KB). Events are appended after every scan.")
+            else:
+                feed_status.set("Not created yet - it appears after the first scan.")
+        update_feed_status()
+        ttk.Label(frame, textvariable=feed_status, foreground=self.palette["muted"],
                   wraplength=self.px(430), justify="left").grid(row=4, column=1, sticky="w")
+        ttk.Label(frame, text="Put this same path in the Insights collector's <localfile> entry "
+                              "(ossec.conf) so it tails the file. Every scan is also saved as its own "
+                              ".ndjson next to the report.", foreground=self.palette["muted"],
+                  wraplength=self.px(430), justify="left").grid(row=5, column=1, sticky="w", pady=(2, 0))
 
         ext_var = tk.BooleanVar(value=bool(scan_cfg.get("external_scripts", False)))
         ttk.Checkbutton(frame, text="Allow nmap scripts that contact third-party services (vulners CVE "
                                     "lookups - sends detected software versions to vulners.com)",
-                        variable=ext_var).grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 3))
+                        variable=ext_var).grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 3))
         upd_var = tk.BooleanVar(value=bool(upd_cfg.get("check_on_startup", True)))
         ttk.Checkbutton(frame, text="Check for updates when the app starts", variable=upd_var).grid(
-            row=6, column=0, columnspan=3, sticky="w", pady=3)
+            row=7, column=0, columnspan=3, sticky="w", pady=3)
         ui_cfg = cfg.setdefault("ui", {})
         theme_row = ttk.Frame(frame)
-        theme_row.grid(row=7, column=0, columnspan=3, sticky="w", pady=(10, 3))
+        theme_row.grid(row=8, column=0, columnspan=3, sticky="w", pady=(10, 3))
         ttk.Label(theme_row, text="Appearance:").pack(side="left")
         theme_var = tk.StringVar(value=ui_cfg.get("theme", "system"))
         for value, label in (("system", "Match system"), ("light", "Light"), ("dark", "Dark")):
             ttk.Radiobutton(theme_row, text=label, variable=theme_var, value=value).pack(side="left", padx=(10, 0))
 
         ttk.Label(frame, text=f"Saved to: {config_write_path()}", foreground=self.palette["muted"]).grid(
-            row=8, column=0, columnspan=3, sticky="w", pady=(10, 0))
+            row=9, column=0, columnspan=3, sticky="w", pady=(10, 0))
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=9, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        btn_row.grid(row=10, column=0, columnspan=3, sticky="e", pady=(12, 0))
 
         def save() -> None:
             out_cfg["directory"] = out_var.get().strip() or "./output"
             ins_cfg["enabled"] = ins_enabled.get()
-            ins_cfg["path"] = ins_path.get().strip()
+            chosen = ins_path.get().strip()
+            ins_cfg["path"] = "" if chosen == str(default_insights_feed_path()) else chosen
             scan_cfg["external_scripts"] = ext_var.get()
             upd_cfg["check_on_startup"] = upd_var.get()
             ui_cfg["theme"] = theme_var.get()

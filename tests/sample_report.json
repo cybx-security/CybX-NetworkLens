@@ -1,0 +1,59 @@
+{
+  "scan_metadata": {
+    "timestamp": "2026-10-13T13:45:57.031346+00:00",
+    "scan_start": "Tue Oct 13 09:45:56 2026",
+    "scan_end": "Tue Oct 13 09:45:57 2026",
+    "target": "127.0.0.1",
+    "scan_type": "comprehensive",
+    "scan_args": "/Users/mycalpedder/CybXProjects/CybXNetworkScanner/binaries/macos/nmap --datadir /Users/mycalpedder/CybXProjects/CybXNetworkScanner/binaries/macos -sT -sV -T4 -p 22,80,443 -oX - 127.0.0.1",
+    "scanner_version": "1.3.1",
+    "nmap_version": "7.95",
+    "hosts_up": 1,
+    "hosts_down": 0
+  },
+  "hosts": [
+    {
+      "ip": "127.0.0.1",
+      "status": "up",
+      "hostname": "localhost",
+      "mac_address": "",
+      "vendor": "",
+      "ports": [
+        {
+          "port": 22,
+          "protocol": "tcp",
+          "state": "open",
+          "service": "ssh",
+          "product": "OpenSSH",
+          "version": "10.3",
+          "extra_info": "protocol 2.0",
+          "vulnerabilities": [],
+          "scripts": []
+        }
+      ],
+      "os": null,
+      "os_matches": [],
+      "uptime": null,
+      "distance": null,
+      "host_scripts": [],
+      "vulnerabilities": [],
+      "ai_analysis": {
+        "ip": "127.0.0.1",
+        "risk_level": "info",
+        "summary": "1 open port(s): 22. No rule matches; manual review still recommended.",
+        "findings": [],
+        "recommendations": []
+      }
+    }
+  ],
+  "ai_analysis_summary": {
+    "overall_risk": "info",
+    "executive_summary": "Scanned 1 live host(s) (0 not responding). no significant-risk host(s) identified. Overall network risk: INFO.",
+    "network_observations": [
+      "1 administrative service(s) exposed on scanned hosts."
+    ],
+    "priority_actions": [
+      "No critical actions identified by the rule engine. Manual review still recommended."
+    ]
+  }
+}

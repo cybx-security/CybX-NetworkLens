@@ -676,4 +676,14 @@ assert "Executive summary" in page and "192.168.1.50" in page and "Findings by h
 assert "<script" not in page.lower(), "the report is static HTML"
 print("Salvage keeps finished hosts; baseline picking skips partial/discovery; estimates ordered; interfaces ranked; HTML renders")
 
+print("\n=== Testing Insights Feed Path Defaults ===")
+feed_default = paths.default_insights_feed_path()
+assert feed_default.name == "nmap_chat.ndjson" and feed_default.is_absolute()
+assert paths.insights_feed_path({}) == feed_default, "no config -> the default feed file"
+assert paths.insights_feed_path({"output": {"insights_events": {"path": ""}}}) == feed_default
+assert paths.insights_feed_path({"output": {"insights_events": {"enabled": False}}}) is None
+custom = paths.insights_feed_path({"output": {"insights_events": {"path": "/tmp/x/feed.ndjson"}}})
+assert str(custom) == "/tmp/x/feed.ndjson"
+print(f"Default feed: {feed_default}; empty path = default; disabled = none; custom honoured")
+
 print("\n✅ All tests passed!")

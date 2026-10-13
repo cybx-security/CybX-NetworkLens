@@ -631,9 +631,14 @@ with a warning.
   repo folder when running from source — never under whatever folder the app happened
   to be started from.
 - `output.include_raw_nmap` — embed the raw nmap XML in the JSON report.
-- `output.insights_events.enabled` — write the per-port NDJSON events for Insights.
-- `output.insights_events.path` — fixed file the Insights collector tails (appended each
-  run). Empty = fresh per-scan `.ndjson` next to the report. See [`insights/`](insights/README.md).
+- `output.insights_events.enabled` — send scans to Insights (append per-port events to the feed file).
+- `output.insights_events.path` — the fixed file the Insights collector tails; every scan
+  appends to it. Empty (the default) means the standard location:
+  `C:\ProgramData\CybX\Insights\nmap_chat.ndjson` on Windows,
+  `/var/log/insights/nmap_chat.ndjson` on macOS and Linux. *Settings* shows the path in
+  use with a **Copy path** button, so it can be pasted into the collector's `<localfile>`
+  entry. A per-scan `.ndjson` is always written next to the report too. See
+  [`insights/`](insights/README.md).
 
 The scanner makes **no external network calls** and needs no API keys — it only runs the
 nmap scan and writes files locally.
