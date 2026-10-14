@@ -53,6 +53,7 @@ try:
     import scheduled
     import diagnostics
     import ui_theme
+    import clipboard
 except ImportError:
     from .scanner import (build_nmap_command, check_privileges, get_nmap_version,
                           nmap_environment_warnings, exit_code_hint, rate_limit_warning,
@@ -80,6 +81,7 @@ except ImportError:
     from . import scheduled
     from . import diagnostics
     from . import ui_theme
+    from . import clipboard
 
 
 PROGRESS_RE = re.compile(r"About ([\d.]+)% done", re.IGNORECASE)
@@ -126,6 +128,10 @@ class ScannerGUI:
         self.output_dir = resolve_output_dir(self.config.get("output", {}).get("directory"))
 
         self._set_window_icon()
+        # Cmd/Ctrl+C in any entry or text box goes through our clipboard
+        # helper, which also works when the app runs as root on macOS.
+        for cls in ("Entry", "TEntry", "Text", "TCombobox"):
+            self.root.bind_class(cls, "<<Copy>>", self._copy_selection, add="+")
         self.palette = ui_theme.PALETTES["light"]
         self._apply_theme()
         self._build_ui()
@@ -255,6 +261,11 @@ class ScannerGUI:
                     lbl.configure(foreground=pal["accent"])
                 except tk.TclError:
                     pass
+
+    def _copy_selection(self, event) -> None:
+        text = clipboard.selected_text(event.widget)
+        if text:
+            clipboard.copy_text(self.root, text)
 
     def _muted(self, parent, **kw) -> ttk.Label:
         lbl = ttk.Label(parent, foreground=self.palette["muted"], **kw)
@@ -1652,9 +1663,11 @@ class ScannerGUI:
         feed_btns.grid(row=3, column=2, padx=4)
 
         def copy_feed_path() -> None:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(ins_path.get().strip())
-            feed_status.set("Path copied to the clipboard.")
+            if clipboard.copy_text(self.root, ins_path.get().strip()):
+                feed_status.set("Path copied to the clipboard - paste it into the collector's ossec.conf.")
+            else:
+                feed_status.set("Couldn't reach the clipboard; select the path above and copy it, or "
+                                "read it from the Live Log.")
 
         def browse_feed() -> None:
             chosen = filedialog.asksaveasfilename(
