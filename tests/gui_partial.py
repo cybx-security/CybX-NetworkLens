@@ -18,7 +18,7 @@ class FakeNmap:
     """Writes one finished host to -oX, streams a few lines, then hangs until killed."""
     def __init__(self, cmd, **kw):
         Path(cmd[cmd.index("-oX") + 1]).write_text(PARTIAL_XML)
-        self._done = threading.Event(); self.returncode = None
+        self._done = threading.Event(); self.returncode = None; self.pid = 4242
         def lines():
             yield "Starting Nmap 7.95\n"; yield "Nmap scan report for 10.0.0.1\n"; yield "Host is up.\n"
             self._done.wait()

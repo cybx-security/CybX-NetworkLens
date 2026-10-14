@@ -992,24 +992,61 @@ class ScannerGUI:
             # Without this nmap outlives the window and keeps probing the
             # network, for hours on a large scan, with nothing left to stop it.
             self._stop_requested = True
-            if self.proc and self.proc.poll() is None:
-                try:
-                    self.proc.kill()
-                    self.proc.wait(timeout=5)
-                except Exception:
-                    pass
+            self._kill_nmap(self.proc, "quit")
             self._remove_xml_tmp()
         self.root.destroy()
 
+    def _kill_nmap(self, proc, reason: str) -> None:
+        """
+        Stop a running nmap for good.
+
+        A polite terminate first (nmap catches it and exits cleanly, which is
+        what lets a stopped scan keep its finished hosts); if it is still
+        alive a few seconds later, a hard kill. On Windows the whole process
+        tree goes, in case nmap spawned helpers.
+        """
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+        except Exception as e:
+            self._log(f"[!] Could not signal nmap (pid {proc.pid}): {e}", "error")
+        try:
+            proc.wait(timeout=3)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        self._log(f"[!] nmap (pid {proc.pid}) did not exit after {reason}; forcing it to stop.", "warn")
+        try:
+            if platform.system() == "Windows":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                               capture_output=True, creationflags=NO_WINDOW_FLAGS)
+            proc.kill()
+            proc.wait(timeout=5)
+        except Exception as e:
+            self._log(f"[!] Could not force-stop nmap (pid {proc.pid}): {e}", "error")
+
     def stop_scan(self) -> None:
-        if self.proc and self.proc.poll() is None:
-            try:
-                self._stop_requested = True
-                self.proc.terminate()
-                self._log("[!] Stop requested by user. Waiting for nmap to exit...", "warn")
-                self.status_var.set("Stopping...")
-            except Exception as e:
-                self._log(f"[!] Failed to stop nmap: {e}", "error")
+        proc = self.proc
+        if not (proc and proc.poll() is None):
+            if self._scan_running():
+                self._log("[*] nmap has already exited; finishing up...", "info")
+            return
+        self._stop_requested = True
+        self.stop_btn.config(state="disabled")
+        self.status_var.set("Stopping... (keeping the hosts that finished)")
+        self._log(f"[!] Stop requested. Asking nmap (pid {proc.pid}) to exit...", "warn")
+        self.root.update_idletasks()
+        # Off the UI thread: the wait-then-kill takes up to a few seconds.
+        threading.Thread(target=self._kill_nmap, args=(proc, "the stop request"), daemon=True).start()
+        # Belt and braces: if the scan is somehow still "running" well after
+        # nmap should be dead, say so instead of leaving a stuck Stopping...
+        self.root.after(15000, self._check_stop_finished)
+
+    def _check_stop_finished(self) -> None:
+        if self._scan_running() and self._stop_requested:
+            self._log("[!] The scan is still winding down 15 s after Stop. If this persists, "
+                      "quit the app; nmap is stopped with it.", "warn")
 
     # ---------- Queue polling (runs on the Tk main thread) ----------
 
