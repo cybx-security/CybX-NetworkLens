@@ -61,10 +61,26 @@ jobs:
       - name: Install NSIS (builds the installer)
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "choco install nsis failed ($LASTEXITCODE)" }
-          $exe = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          if (-not (Test-Path $exe)) { throw "makensis.exe not found at $exe" }
+          # Chocolatey's nsis package occasionally reports success without
+          # installing (seen once in CI), so look for makensis afterwards and
+          # retry with --force before giving up.
+          function Find-Makensis {
+            foreach ($dir in @("${env:ProgramFiles(x86)}\NSIS", "$env:ProgramFiles\NSIS")) {
+              if (Test-Path "$dir\makensis.exe") { return "$dir\makensis.exe" }
+            }
+            $cmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+            return $null
+          }
+          choco install nsis -y --no-progress
+          $exe = Find-Makensis
+          if (-not $exe) {
+            Write-Host "makensis not found after the first install; retrying with --force"
+            choco install nsis -y --no-progress --force
+            $exe = Find-Makensis
+          }
+          if (-not $exe) { throw "makensis.exe not found after installing NSIS" }
+          Write-Host "makensis: $exe"
           & $exe /VERSION
 
       - name: Build (build\build_windows.bat)
